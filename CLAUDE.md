@@ -67,3 +67,7 @@ protocol/ → (standalone, value types + codec only)
 - Segment files named {base-offset:020d}.log and {base-offset:020d}.index.
 - Wire format: [4-byte length][1-byte type][payload]; all multi-byte fields big-endian.
 - No JSON, no Protobuf, no gRPC, no Netty — custom binary codec is the portfolio signal.
+
+## Git commit policy
+- Never add a `Co-Authored-By: Claude` (or any Anthropic-related) trailer to commit
+  messages. Commit messages should list only human authors.
