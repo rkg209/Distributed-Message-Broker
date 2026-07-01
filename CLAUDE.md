@@ -38,7 +38,7 @@ PROVEN by the chaos harness. Correctness is the deliverable.
 
 ## Current spec in progress
 <!-- Update this line when starting a new spec -->
-Spec 01 — Wire Protocol & Network Layer
+Spec 02 — In-Memory Log & Single-Topic Publish/Consume (Thin Slice)
 
 ## Build / test / run commands
 - Build:            ./gradlew build

@@ -51,7 +51,7 @@
 | Spec | Title | Status | Done Date |
 |------|-------|--------|-----------|
 | 00 | Foundations & Scaffolding | done | 2026-07-01 |
-| 01 | Wire Protocol & Network Layer | todo | — |
+| 01 | Wire Protocol & Network Layer | done | 2026-07-02 |
 | 02 | In-Memory Log + Thin Slice | todo | — |
 | 03 | Durable Append-Only Log | todo | — |
 | 04 | Partitions & Consumer Groups | todo | — |
