@@ -1,0 +1,25 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd /Users/rahul/Placement/Project/5_Mini_kafka && if ls src/**/*.java raft/src/**/*.java broker/src/**/*.java 2>/dev/null | grep -q .; then ./gradlew spotlessApply --quiet 2>&1 | tail -5; fi"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd /Users/rahul/Placement/Project/5_Mini_kafka && echo '=== Mini-Kafka SDD Session ===' && grep 'Current spec' CLAUDE.md | head -1 && echo '--- Pending specs:' && grep -l 'status: todo' specs/*.md 2>/dev/null | xargs -I{} basename {} || echo '(none)'"
+          }
+        ]
+      }
+    ]
+  }
+}

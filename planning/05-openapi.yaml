@@ -1,0 +1,963 @@
+```yaml
+openapi: 3.0.3
+info:
+  title: Distributed Message Broker API
+  description: |
+    HTTP management and data-plane API for the Distributed Message Broker.
+    All binary wire-protocol operations (PUBLISH_REQ, POLL_REQ, etc.) are
+    performed over the custom TCP protocol described in the architecture
+    document. This REST API exposes the administrative, metadata, and
+    consumer-group management surfaces that are naturally expressed as
+    request/response HTTP interactions.
+
+    ## Authentication
+    All endpoints require a Bearer token supplied in the `Authorization`
+    header. Tokens are opaque strings validated by the broker. A future
+    version will support mTLS for broker-to-broker calls.
+
+    ## Versioning
+    All paths are prefixed with `/v1`. Breaking changes will introduce a
+    new prefix (e.g. `/v2`) without removing the previous version until a
+    deprecation window has elapsed.
+
+    ## Error model
+    Every error response uses the `Error` schema defined in this document.
+    HTTP status codes follow standard semantics; the `code` field in the
+    body carries a machine-readable broker error code that maps to the
+    binary protocol's error codes.
+
+    ## Pagination
+    Collection endpoints that may return large result sets use
+    cursor-based pagination via the `nextCursor` field in the response
+    body. Pass the returned cursor as the `cursor` query parameter on the
+    next request. An absent or null `nextCursor` means the last page has
+    been reached.
+  version: "1.0.0"
+  contact:
+    name: Broker Platform Team
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:9080/v1
+    description: Local development broker (node 1)
+  - url: http://broker-1:9080/v1
+    description: Broker node 1
+  - url: http://broker-2:9080/v1
+    description: Broker node 2
+  - url: http://broker-3:9080/v1
+    description: Broker node 3
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: cluster
+    description: Cluster-wide health and membership information
+  - name: topics
+    description: Topic lifecycle management
+  - name: partitions
+    description: Partition metadata and leader information
+  - name: messages
+    description: HTTP-based message publish and poll (convenience wrapper over the binary protocol)
+  - name: consumer-groups
+    description: Consumer group offset management
+  - name: producers
+    description: Producer session management and idempotency state
+  - name: raft
+    description: Raft consensus state inspection (read-only, diagnostic)
+  - name: retention
+    description: Retention policy configuration
+  - name: admin
+    description: Administrative operations (log truncation, segment management)
+
+paths:
+
+  # ---------------------------------------------------------------------------
+  # Cluster
+  # ---------------------------------------------------------------------------
+
+  /cluster:
+    get:
+      operationId: getCluster
+      summary: Get cluster overview
+      description: |
+        Returns the list of known broker nodes, their roles, and overall
+        cluster health. Any broker can answer this request; the response
+        reflects that broker's current view of the cluster.
+      tags: [cluster]
+      responses:
+        "200":
+          description: Cluster overview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClusterInfo"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /cluster/health:
+    get:
+      operationId: getClusterHealth
+      summary: Liveness and readiness probe
+      description: |
+        Returns HTTP 200 when the broker is alive and ready to serve
+        requests. Returns HTTP 503 when the broker is starting up,
+        shutting down, or has lost quorum for all partitions it leads.
+        Suitable for use as a Kubernetes liveness/readiness probe.
+      tags: [cluster]
+      security: []
+      responses:
+        "200":
+          description: Broker is healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+        "503":
+          description: Broker is not ready
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /cluster/brokers:
+    get:
+      operationId: listBrokers
+      summary: List all broker nodes
+      description: Returns the static broker membership list as known to this broker.
+      tags: [cluster]
+      responses:
+        "200":
+          description: List of broker nodes
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [brokers]
+                properties:
+                  brokers:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/BrokerNode"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /cluster/brokers/{brokerId}:
+    get:
+      operationId: getBroker
+      summary: Get a specific broker node
+      tags: [cluster]
+      parameters:
+        - $ref: "#/components/parameters/brokerId"
+      responses:
+        "200":
+          description: Broker node detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BrokerNode"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ---------------------------------------------------------------------------
+  # Topics
+  # ---------------------------------------------------------------------------
+
+  /topics:
+    get:
+      operationId: listTopics
+      summary: List all topics
+      description: |
+        Returns all topics known to this broker. Topics are derived from
+        the broker configuration; this endpoint reflects the current
+        in-memory metadata view.
+      tags: [topics]
+      parameters:
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: Paginated list of topics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TopicListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    post:
+      operationId: createTopic
+      summary: Create a topic
+      description: |
+        Registers a new topic with the specified partition count and
+        replication factor. The broker validates that the requested
+        replication factor does not exceed the number of available brokers.
+        Topic creation is propagated to all brokers via the metadata
+        service; the operation is synchronous and returns only after the
+        topic is ready to accept writes.
+      tags: [topics]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTopicRequest"
+      responses:
+        "201":
+          description: Topic created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Topic"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /topics/{topicName}:
+    get:
+      operationId: getTopic
+      summary: Get topic metadata
+      tags: [topics]
+      parameters:
+        - $ref: "#/components/parameters/topicName"
+      responses:
+        "200":
+          description: Topic metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Topic"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    delete:
+      operationId: deleteTopic
+      summary: Delete a topic
+      description: |
+        Marks the topic for deletion. All partition logs and associated
+        consumer group offset records are removed. In-flight produce
+        requests to this topic will receive a `TOPIC_NOT_FOUND` error.
+        This operation is irreversible.
+      tags: [topics]
+      parameters:
+        - $ref: "#/components/parameters/topicName"
+      responses:
+        "204":
+          description: Topic deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Topic has active consumers; deletion refused
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /topics/{topicName}/retention:
+    get:
+      operationId: getTopicRetention
+      summary: Get retention policy for a topic
+      tags: [topics, retention]
+      parameters:
+        - $ref: "#/components/parameters/topicName"
+      responses:
+        "200":
+          description: Current retention policy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RetentionPolicy"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    put:
+      operationId: updateTopicRetention
+      summary: Update retention policy for a topic
+      description: |
+        Updates the size-based and/or time-based retention policy for all
+        partitions of the topic. Changes take effect on the next retention
+        enforcement cycle (default: every 60 seconds).
+      tags: [topics, retention]
+      parameters:
+        - $ref: "#/components/parameters/topicName"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RetentionPolicy"
+      responses:
+        "200":
+          description: Updated retention policy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RetentionPolicy"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ---------------------------------------------------------------------------
+  # Partitions
+  # ---------------------------------------------------------------------------
+
+  /topics/{topicName}/partitions:
+    get:
+      operationId: listPartitions
+      summary: List partitions for a topic
+      description: |
+        Returns metadata for all partitions of the topic, including the
+        current leader, replica set, leader epoch, and log offsets.
+      tags: [partitions]
+      parameters:
+        - $ref: "#/components/parameters/topicName"
+      responses:
+        "200":
+          description: List of partition metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [topicName, partitions]
+                properties:
+                  topicName:
+                    type: string
+                  partitions:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/PartitionInfo"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /topics/{topicName}/partitions/{partitionId}:
+    get:
+      operationId: getPartition
+      summary: Get partition metadata
+      tags: [partitions]
+      parameters:
+        - $ref: "#/components/parameters/topicName"
+        - $ref: "#/components/parameters/partitionId"
+      responses:
+        "200":
+          description: Partition metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartitionInfo"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /topics/{topicName}/partitions/{partitionId}/offsets:
+    get:
+      operationId: getPartitionOffsets
+      summary: Get offset bounds for a partition
+      description: |
+        Returns the first available offset (after retention) and the
+        next offset (high-water mark, i.e. the next offset that will be
+        assigned to an incoming message). The committed offset (last
+        offset replicated to a majority) is also returned.
+      tags: [partitions]
+      parameters:
+        - $ref: "#/components/parameters/topicName"
+        - $ref: "#/components/parameters/partitionId"
+      responses:
+        "200":
+          description: Partition offset bounds
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartitionOffsets"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /topics/{topicName}/partitions/{partitionId}/leader:
+    get:
+      operationId: getPartitionLeader
+      summary: Get the current leader for a partition
+      description: |
+        Returns the broker ID and address of the current Raft leader for
+        this partition, along with the leader epoch. Clients should use
+        this endpoint to discover the correct broker to send binary
+        protocol requests to.
+      tags: [partitions]
+      parameters:
+        - $ref: "#/components/parameters/topicName"
+        - $ref: "#/components/parameters/partitionId"
+      responses:
+        "200":
+          description: Current partition leader
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartitionLeader"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          description: No leader currently elected for this partition
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /topics/{topicName}/partitions/{partitionId}/segments:
+    get:
+      operationId: listSegments
+      summary: List log segments for a partition
+      description: |
+        Returns metadata for all on-disk log segments for this partition
+        on the local broker. Only available on brokers that hold a replica
+        for the requested partition.
+      tags: [partitions, admin]
+      parameters:
+        - $ref: "#/components/parameters/topicName"
+        - $ref: "#/components/parameters/partitionId"
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: Paginated list of log segments
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SegmentListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ---------------------------------------------------------------------------
+  # Messages (HTTP convenience layer)
+  # ---------------------------------------------------------------------------
+
+  /topics/{topicName}/partitions/{partitionId}/messages:
+    post:
+      operationId: publishMessage
+      summary: Publish a message to a partition (HTTP)
+      description: |
+        Convenience HTTP wrapper over the binary PUBLISH_REQ protocol
+        message. Suitable for tooling, testing, and low-throughput
+        administrative writes. For production throughput, use the binary
+        TCP protocol directly.
+
+        The broker performs the same idempotency check as the binary
+        protocol: if `producerId` and `sequenceNumber` are supplied and
+        match a previously committed message, the original offset is
+        returned without a second append.
+
+        The request is forwarded to the partition leader if this broker
+        is not the leader. The response includes the committed offset.
+      tags: [messages]
+      parameters:
+        - $ref: "#/components/parameters/topicName"
+        - $ref: "#/components/parameters/partitionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PublishMessageRequest"
+      responses:
+        "200":
+          description: Message committed (idempotent duplicate — same offset returned)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublishMessageResponse"
+        "201":
+          description: Message committed (new write)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublishMessageResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Sequence gap detected — producer skipped a sequence number
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "503":
+          description: No leader available for this partition
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    get:
+      operationId: pollMessages
+      summary: Poll messages from a partition (HTTP)
+      description: |
+        Convenience HTTP wrapper over the binary POLL_REQ protocol
+        message. Returns a batch of committed messages starting at
+        `fromOffset`. Only committed messages (replicated to a majority)
+        are returned, enforcing INV-5.
+
+        For production throughput, use the binary TCP protocol directly.
+      tags: [messages]
+      parameters:
+        - $ref: "#/components/parameters/topicName"
+        - $ref: "#/components/parameters/partitionId"
+        - name: fromOffset
+          in: query
+          required: true
+          description: The log offset to start reading from (inclusive).
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
+        - name: maxBytes
+          in: query
+          required: false
+          description: Maximum number of bytes to return across all records in the batch.
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+            maximum: 16777216
+            default: 65536
+        - name: maxRecords
+          in: query
+          required: false
+          description: Maximum number of records to return.
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+            maximum: 10000
+            default: 500
+      responses:
+        "200":
+          description: Batch of committed messages
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PollMessagesResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "416":
+          description: |
+            Requested offset is out of range (before firstOffset or
+            beyond nextOffset).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: No leader available for this partition
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /topics/{topicName}/partitions/{partitionId}/messages/{offset}:
+    get:
+      operationId: getMessage
+      summary: Get a single message by offset
+      description: |
+        Returns the single committed message at the specified offset.
+        Returns 404 if the offset has been removed by retention or if
+        the offset has not yet been committed.
+      tags: [messages]
+      parameters:
+        - $ref: "#/components/parameters/topicName"
+        - $ref: "#/components/parameters/partitionId"
+        - name: offset
+          in: path
+          required: true
+          description: The exact log offset of the message to retrieve.
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
+      responses:
+        "200":
+          description: The message at the requested offset
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          description: No leader available for this partition
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ---------------------------------------------------------------------------
+  # Consumer Groups
+  # ---------------------------------------------------------------------------
+
+  /consumer-groups:
+    get:
+      operationId: listConsumerGroups
+      summary: List all consumer groups
+      tags: [consumer-groups]
+      parameters:
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: Paginated list of consumer groups
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsumerGroupListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /consumer-groups/{groupId}:
+    get:
+      operationId: getConsumerGroup
+      summary: Get consumer group details
+      description: |
+        Returns the consumer group's committed offsets for all partitions
+        it has committed to, along with the lag (difference between the
+        partition's high-water mark and the committed offset) for each.
+      tags: [consumer-groups]
+      parameters:
+        - $ref: "#/components/parameters/groupId"
+      responses:
+        "200":
+          description: Consumer group detail with per-partition offsets and lag
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsumerGroup"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    delete:
+      operationId: deleteConsumerGroup
+      summary: Delete a consumer group
+      description: |
+        Removes all committed offset records for the consumer group.
+        The group's offset log file is deleted. This operation is
+        irreversible. Active consumers in the group will receive errors
+        on their next commit attempt.
+      tags: [consumer-groups]
+      parameters:
+        - $ref: "#/components/parameters/groupId"
+      responses:
+        "204":
+          description: Consumer group deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Consumer group has active members
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /consumer-groups/{groupId}/offsets:
+    get:
+      operationId: listConsumerGroupOffsets
+      summary: List committed offsets for a consumer group
+      description: |
+        Returns the last committed offset for every `(topic, partition)`
+        pair this group has committed to. Also returns the current
+        high-water mark and computed lag for each partition.
+      tags: [consumer-groups]
+      parameters:
+        - $ref: "#/components/parameters/groupId"
+        - name: topic
+          in: query
+          required: false
+          description: Filter results to a specific topic.
+          schema:
+            type: string
+            maxLength: 255
+      responses:
+        "200":
+          description: Committed offsets with lag
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsumerGroupOffsetList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /consumer-groups/{groupId}/offsets/{topicName}/{partitionId}:
+    get:
+      operationId: getConsumerGroupOffset
+      summary: Get committed offset for a specific partition
+      tags: [consumer-groups]
+      parameters:
+        - $ref: "#/components/parameters/groupId"
+        - $ref: "#/components/parameters/topicName"
+        - $ref: "#/components/parameters/partitionId"
+      responses:
+        "200":
+          description: Committed offset for the partition
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsumerGroupOffset"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    put:
+      operationId: setConsumerGroupOffset
+      summary: Administratively set a consumer group offset
+      description: |
+        Overrides the committed offset for a `(group, topic, partition)`
+        triple. This is an administrative operation intended for offset
+        reset scenarios (e.g. replay from the beginning, skip to the end).
+        The new offset must be within `[firstOffset, nextOffset]` for the
+        partition. The write is durable (fsynced to the offset log) before
+        the response is returned.
+      tags: [consumer-groups, admin]
+      parameters:
+        - $ref: "#/components/parameters/groupId"
+        - $ref: "#/components/parameters/topicName"
+        - $ref: "#/components/parameters/partitionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetOffsetRequest"
+      responses:
+        "200":
+          description: Offset updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsumerGroupOffset"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    delete:
+      operationId: deleteConsumerGroupOffset
+      summary: Delete committed offset for a specific partition
+      description: |
+        Removes the committed offset record for this `(group, topic,
+        partition)` triple. The consumer will start from offset 0 on its
+        next poll if no offset is committed.
+      tags: [consumer-groups, admin]
+      parameters:
+        - $ref: "#/components/parameters/groupId"
+        - $ref: "#/components/parameters/topicName"
+        - $ref: "#/components/parameters/partitionId"
+      responses:
+        "204":
+          description: Offset deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ---------------------------------------------------------------------------
+  # Producers
+  # ---------------------------------------------------------------------------
+
+  /producers:
+    get:
+      operationId: listProducerSessions
+      summary: List active producer sessions
+      description: |
+        Returns all producer sessions known to this broker (i.e. all
+        `(producerId, partitionId)` pairs for which the idempotency store
+        has a `lastCommittedSeq` entry). This reflects the in-memory
+        idempotency state rebuilt from the partition log on startup.
+      tags: [producers]
+      parameters:
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/limit"
+        - name: partitionId
+          in: query
+          required: false
+          description: Filter to sessions for a specific partition.
+          schema:
+            type: integer
+            format: int32
+            minimum: 0
+      responses:
+        "200":
+          description: Paginated list of producer sessions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProducerSessionListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /producers/{producerId}:
+    get:
+      operationId: getProducerSession
+      summary: Get producer session state
+      description: |
+        Returns the idempotency state for a producer across all partitions
+        it has written to on this broker.
+      tags: [producers]
+      parameters:
+        - name: producerId
+          in: path
+          required: true
+          description: The producer ID (64-bit integer, UUID-derived).
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: Producer session state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProducerSession"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /producers/{producerId}/partitions/{topicName}/{partitionId}:
+    get:
+      operationId: getProducerPartitionState
+      summary: Get producer idempotency state for a specific partition
+      tags: [producers]
+      parameters:
+        - name: producerId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - $ref: "#/components/parameters/topicName"
+        - $ref: "#/components/parameters/partitionId"
+      responses:
+        "200":
+          description: Producer idempotency state for the partition
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProducerPartitionState"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ---------------------------------------------------------------------------
+  # Raft (diagnostic / read-only)
+  # ---------------------------------------------------------------------------
+
+  /raft/partitions:
+    get:
+      operationId: listRaftPartitions
+      summary: List Raft group state for all partitions on this broker
+      tags: [raft]
+      responses:
+        "200":
+          description: List of Raft partition states
+          content:
+            application/json:
+              schema:
