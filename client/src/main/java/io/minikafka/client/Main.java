@@ -61,7 +61,13 @@ public final class Main {
     for (TopicMetadata t : metadataClient.cachedTopics()) {
       System.out.println("  " + t.topic() + " (" + t.partitions().size() + " partitions)");
       for (PartitionMetadata p : t.partitions()) {
-        System.out.println("    partition " + p.partitionId() + " leader=" + p.leaderId());
+        System.out.println(
+            "    partition "
+                + p.partitionId()
+                + " leader="
+                + p.leaderId()
+                + " replicas="
+                + p.replicaIds());
       }
     }
   }

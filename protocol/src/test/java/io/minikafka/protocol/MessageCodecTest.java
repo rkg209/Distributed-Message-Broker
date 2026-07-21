@@ -35,7 +35,10 @@ class MessageCodecTest {
             List.of(new BrokerInfo(1, "broker-1", 9092), new BrokerInfo(2, "broker-2", 9093)),
             List.of(
                 new TopicMetadata(
-                    "orders", List.of(new PartitionMetadata(0, 1), new PartitionMetadata(1, 1))))),
+                    "orders",
+                    List.of(
+                        new PartitionMetadata(0, 1, List.of(1, 2, 3)),
+                        new PartitionMetadata(1, 1, List.of()))))),
         new AppendEntriesReq(9L, 5L, 1),
         new AppendEntriesResp(10L, 5L, true),
         new RequestVoteReq(11L, 6L, 2),

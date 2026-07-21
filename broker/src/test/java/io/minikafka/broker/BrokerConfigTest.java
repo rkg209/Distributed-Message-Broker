@@ -2,6 +2,7 @@ package io.minikafka.broker;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.minikafka.log.FsyncPolicy;
 import io.minikafka.log.LogConfig;
@@ -183,5 +184,54 @@ class BrokerConfigTest {
     BrokerConfig config = BrokerConfig.fromEnv(env::get);
 
     assertEquals(java.nio.file.Path.of("/tmp/custom-offsets"), config.offsetDirPath());
+  }
+
+  @Test
+  void absentBrokerListDegradesToSingleBrokerCluster() {
+    BrokerConfig config = BrokerConfig.fromEnv(baseEnv()::get);
+
+    assertEquals(1, config.clusterConfig().brokers().size());
+    assertEquals(1, config.clusterConfig().controllerId());
+    assertTrue(config.clusterConfig().isController(1));
+  }
+
+  @Test
+  void parsesClusterConfigFromEnv() {
+    Map<String, String> env = baseEnv();
+    env.put("BROKER_TOPICS", "orders:2");
+    env.put("BROKER_LIST", "1@broker-1:9092,2@broker-2:9092,3@broker-3:9092");
+    env.put("PARTITION_ASSIGNMENTS", "orders:0=1,2,3");
+    env.put("REPLICATION_FACTOR", "3");
+    env.put("CONTROLLER_ID", "2");
+
+    BrokerConfig config = BrokerConfig.fromEnv(env::get);
+
+    assertEquals(3, config.clusterConfig().brokers().size());
+    assertEquals(2, config.clusterConfig().controllerId());
+    assertEquals(3, config.clusterConfig().replicationFactor());
+    assertTrue(config.clusterConfig().assignmentFor(new TopicPartition("orders", 0)).isPresent());
+  }
+
+  @Test
+  void defaultsHeartbeatTimingsWhenUnset() {
+    BrokerConfig config = BrokerConfig.fromEnv(baseEnv()::get);
+
+    assertEquals(500, config.heartbeatIntervalMs());
+    assertEquals(2000, config.heartbeatTimeoutMs());
+    assertEquals(500, config.peerReconnectBackoffMs());
+  }
+
+  @Test
+  void parsesHeartbeatTimingsWhenSet() {
+    Map<String, String> env = baseEnv();
+    env.put("BROKER_HEARTBEAT_INTERVAL_MS", "250");
+    env.put("BROKER_HEARTBEAT_TIMEOUT_MS", "1000");
+    env.put("BROKER_PEER_RECONNECT_BACKOFF_MS", "100");
+
+    BrokerConfig config = BrokerConfig.fromEnv(env::get);
+
+    assertEquals(250, config.heartbeatIntervalMs());
+    assertEquals(1000, config.heartbeatTimeoutMs());
+    assertEquals(100, config.peerReconnectBackoffMs());
   }
 }

@@ -77,6 +77,10 @@ public final class MessageCodec {
             for (PartitionMetadata p : t.partitions()) {
               out.writeInt(p.partitionId());
               out.writeInt(p.leaderId());
+              out.writeInt(p.replicaIds().size());
+              for (int replicaId : p.replicaIds()) {
+                out.writeInt(replicaId);
+              }
             }
           }
         }
@@ -214,7 +218,15 @@ public final class MessageCodec {
       for (int j = 0; j < partitionCount; j++) {
         int partitionId = in.readInt();
         int leaderId = in.readInt();
-        partitions.add(new PartitionMetadata(partitionId, leaderId));
+        int replicaCount = in.readInt();
+        if (replicaCount < 0) {
+          throw new ProtocolException("Negative replica count: " + replicaCount);
+        }
+        List<Integer> replicaIds = new ArrayList<>(Math.min(replicaCount, 1024));
+        for (int k = 0; k < replicaCount; k++) {
+          replicaIds.add(in.readInt());
+        }
+        partitions.add(new PartitionMetadata(partitionId, leaderId, replicaIds));
       }
       topics.add(new TopicMetadata(topic, partitions));
     }

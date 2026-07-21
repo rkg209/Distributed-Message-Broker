@@ -1,0 +1,62 @@
+name: mini-kafka
+
+x-broker-common: &broker-common
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile
+  networks:
+    - mini-kafka
+  environment: &broker-common-env
+    BROKER_PORT: "9092"
+    BROKER_TOPICS: "orders:3"
+    BROKER_LIST: "1@broker-1:9092,2@broker-2:9092,3@broker-3:9092"
+    REPLICATION_FACTOR: "3"
+    CONTROLLER_ID: "1"
+    PARTITION_ASSIGNMENTS: "orders:0=1,2,3;orders:1=2,3,1;orders:2=3,1,2"
+    BROKER_HEARTBEAT_INTERVAL_MS: "250"
+    BROKER_HEARTBEAT_TIMEOUT_MS: "1000"
+
+services:
+  broker-1:
+    <<: *broker-common
+    environment:
+      <<: *broker-common-env
+      BROKER_ID: "1"
+      BROKER_HOST: "broker-1"
+      BROKER_LOG_DIR: "/data"
+    volumes:
+      - broker-1-data:/data
+    ports:
+      - "9092:9092"
+
+  broker-2:
+    <<: *broker-common
+    environment:
+      <<: *broker-common-env
+      BROKER_ID: "2"
+      BROKER_HOST: "broker-2"
+      BROKER_LOG_DIR: "/data"
+    volumes:
+      - broker-2-data:/data
+    ports:
+      - "9093:9092"
+
+  broker-3:
+    <<: *broker-common
+    environment:
+      <<: *broker-common-env
+      BROKER_ID: "3"
+      BROKER_HOST: "broker-3"
+      BROKER_LOG_DIR: "/data"
+    volumes:
+      - broker-3-data:/data
+    ports:
+      - "9094:9092"
+
+networks:
+  mini-kafka:
+
+volumes:
+  broker-1-data:
+  broker-2-data:
+  broker-3-data:

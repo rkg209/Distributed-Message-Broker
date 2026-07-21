@@ -18,8 +18,10 @@ public final class Main {
   public static void main(String[] args) throws IOException, InterruptedException {
     BrokerConfig config = BrokerConfig.fromEnv();
     BrokerInfo self = new BrokerInfo(config.brokerId(), config.brokerHost(), config.brokerPort());
+    ClusterConfig clusterConfig = config.clusterConfig();
 
-    MetadataService metadataService = new MetadataService(self, config.topicConfig());
+    MetadataService metadataService =
+        new MetadataService(self, config.topicConfig(), clusterConfig);
     TopicRegistry topicRegistry =
         new TopicRegistry(tp -> new DiskPartitionLog(config.logConfigFor(tp)));
     PartitionManager partitionManager = new PartitionManager(topicRegistry, metadataService);
@@ -37,10 +39,26 @@ public final class Main {
         config.brokerHost(),
         acceptor.boundPort());
 
+    HeartbeatMonitor heartbeatMonitor =
+        new HeartbeatMonitor(
+            self,
+            clusterConfig.peersOf(config.brokerId()),
+            config.heartbeatIntervalMs(),
+            config.heartbeatTimeoutMs(),
+            config.peerReconnectBackoffMs());
+    heartbeatMonitor.start();
+    log.info(
+        "Broker {} joined cluster of {} brokers (controller={}, self is controller: {})",
+        config.brokerId(),
+        clusterConfig.brokers().size(),
+        clusterConfig.controllerId(),
+        metadataService.isController());
+
     Runtime.getRuntime()
         .addShutdownHook(
             new Thread(
                 () -> {
+                  heartbeatMonitor.close();
                   acceptor.close();
                   topicRegistry.close();
                   consumerGroupManager.close();

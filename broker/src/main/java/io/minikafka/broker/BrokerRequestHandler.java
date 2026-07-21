@@ -8,6 +8,8 @@ import io.minikafka.protocol.CommitOffsetResp;
 import io.minikafka.protocol.ErrorResp;
 import io.minikafka.protocol.FetchOffsetReq;
 import io.minikafka.protocol.FetchOffsetResp;
+import io.minikafka.protocol.HeartbeatReq;
+import io.minikafka.protocol.HeartbeatResp;
 import io.minikafka.protocol.Message;
 import io.minikafka.protocol.MetadataReq;
 import io.minikafka.protocol.MetadataResp;
@@ -47,10 +49,11 @@ public final class BrokerRequestHandler implements RequestHandler {
       case MetadataReq req ->
           new MetadataResp(
               req.correlationId(),
-              List.of(metadataService.self()),
+              metadataService.clusterBrokers(),
               metadataService.describeTopics());
       case CommitOffsetReq req -> handleCommitOffset(req);
       case FetchOffsetReq req -> handleFetchOffset(req);
+      case HeartbeatReq req -> new HeartbeatResp(req.correlationId(), req.term());
       default ->
           new ErrorResp(
               request.correlationId(),

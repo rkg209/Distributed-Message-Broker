@@ -2,6 +2,7 @@ package io.minikafka.broker;
 
 import io.minikafka.log.FsyncPolicy;
 import io.minikafka.log.LogConfig;
+import io.minikafka.protocol.BrokerInfo;
 import io.minikafka.protocol.ProtocolConfig;
 import java.nio.file.Path;
 import java.util.Arrays;
@@ -24,7 +25,11 @@ public record BrokerConfig(
     long retentionBytes,
     long retentionMs,
     TopicConfig topicConfig,
-    String offsetDir) {
+    String offsetDir,
+    ClusterConfig clusterConfig,
+    long heartbeatIntervalMs,
+    long heartbeatTimeoutMs,
+    long peerReconnectBackoffMs) {
 
   private static final String BROKER_ID = "BROKER_ID";
   private static final String BROKER_HOST = "BROKER_HOST";
@@ -41,9 +46,19 @@ public record BrokerConfig(
   private static final String BROKER_TOPICS = "BROKER_TOPICS";
   private static final String BROKER_DEFAULT_PARTITIONS = "BROKER_DEFAULT_PARTITIONS";
   private static final String BROKER_OFFSET_DIR = "BROKER_OFFSET_DIR";
+  private static final String BROKER_LIST = "BROKER_LIST";
+  private static final String PARTITION_ASSIGNMENTS = "PARTITION_ASSIGNMENTS";
+  private static final String REPLICATION_FACTOR = "REPLICATION_FACTOR";
+  private static final String CONTROLLER_ID = "CONTROLLER_ID";
+  private static final String BROKER_HEARTBEAT_INTERVAL_MS = "BROKER_HEARTBEAT_INTERVAL_MS";
+  private static final String BROKER_HEARTBEAT_TIMEOUT_MS = "BROKER_HEARTBEAT_TIMEOUT_MS";
+  private static final String BROKER_PEER_RECONNECT_BACKOFF_MS = "BROKER_PEER_RECONNECT_BACKOFF_MS";
   private static final int DEFAULT_MAX_POLL_BYTES = 1024 * 1024;
   private static final int DEFAULT_PARTITIONS = 1;
   private static final String DEFAULT_OFFSET_SUBDIR = "__offsets";
+  private static final long DEFAULT_HEARTBEAT_INTERVAL_MS = 500;
+  private static final long DEFAULT_HEARTBEAT_TIMEOUT_MS = 2000;
+  private static final long DEFAULT_PEER_RECONNECT_BACKOFF_MS = 500;
 
   /**
    * Loads configuration from environment variables. Throws if a required variable is missing or
@@ -73,6 +88,32 @@ public record BrokerConfig(
     TopicConfig topicConfig = TopicConfig.parse(env.apply(BROKER_TOPICS), defaultPartitions);
     String offsetDir =
         optionalString(env, BROKER_OFFSET_DIR, Path.of(logDir, DEFAULT_OFFSET_SUBDIR).toString());
+
+    String brokerListSpec = env.apply(BROKER_LIST);
+    ClusterConfig clusterConfig;
+    if (brokerListSpec == null || brokerListSpec.isBlank()) {
+      clusterConfig = ClusterConfig.singleBroker(new BrokerInfo(brokerId, brokerHost, brokerPort));
+    } else {
+      Integer replicationFactor =
+          optionalInteger(env, REPLICATION_FACTOR, "REPLICATION_FACTOR must be an integer");
+      Integer controllerId =
+          optionalInteger(env, CONTROLLER_ID, "CONTROLLER_ID must be an integer");
+      clusterConfig =
+          ClusterConfig.parse(
+              brokerListSpec,
+              env.apply(PARTITION_ASSIGNMENTS),
+              replicationFactor,
+              controllerId,
+              brokerId,
+              topicConfig);
+    }
+    long heartbeatIntervalMs =
+        optionalLong(env, BROKER_HEARTBEAT_INTERVAL_MS, DEFAULT_HEARTBEAT_INTERVAL_MS);
+    long heartbeatTimeoutMs =
+        optionalLong(env, BROKER_HEARTBEAT_TIMEOUT_MS, DEFAULT_HEARTBEAT_TIMEOUT_MS);
+    long peerReconnectBackoffMs =
+        optionalLong(env, BROKER_PEER_RECONNECT_BACKOFF_MS, DEFAULT_PEER_RECONNECT_BACKOFF_MS);
+
     return new BrokerConfig(
         brokerId,
         brokerHost,
@@ -87,7 +128,11 @@ public record BrokerConfig(
         retentionBytes,
         retentionMs,
         topicConfig,
-        offsetDir);
+        offsetDir,
+        clusterConfig,
+        heartbeatIntervalMs,
+        heartbeatTimeoutMs,
+        peerReconnectBackoffMs);
   }
 
   private static FsyncPolicy parseFsyncPolicy(String value) {
@@ -159,6 +204,19 @@ public record BrokerConfig(
       return defaultValue;
     }
     return parseLong(name, value);
+  }
+
+  private static Integer optionalInteger(
+      java.util.function.Function<String, String> env, String name, String errorMessage) {
+    String value = env.apply(name);
+    if (value == null || value.isBlank()) {
+      return null;
+    }
+    try {
+      return Integer.parseInt(value);
+    } catch (NumberFormatException e) {
+      throw new IllegalStateException(errorMessage + ", got: " + value, e);
+    }
   }
 
   private static long parseLong(String name, String value) {
