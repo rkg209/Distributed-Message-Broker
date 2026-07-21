@@ -52,8 +52,8 @@
 |------|-------|--------|-----------|
 | 00 | Foundations & Scaffolding | done | 2026-07-01 |
 | 01 | Wire Protocol & Network Layer | done | 2026-07-02 |
-| 02 | In-Memory Log + Thin Slice | todo | — |
-| 03 | Durable Append-Only Log | todo | — |
+| 02 | In-Memory Log + Thin Slice | done | 2026-07-21 |
+| 03 | Durable Append-Only Log | done | 2026-07-21 |
 | 04 | Partitions & Consumer Groups | todo | — |
 | 05 | Cluster Membership & Metadata | todo | — |
 | 06 | Raft Consensus Core | todo | — |

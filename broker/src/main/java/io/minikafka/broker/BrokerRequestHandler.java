@@ -2,6 +2,7 @@ package io.minikafka.broker;
 
 import io.minikafka.log.AppendResult;
 import io.minikafka.log.LogRecord;
+import io.minikafka.log.OffsetOutOfRangeException;
 import io.minikafka.protocol.BrokerInfo;
 import io.minikafka.protocol.ErrorResp;
 import io.minikafka.protocol.Message;
@@ -50,8 +51,12 @@ public final class BrokerRequestHandler implements RequestHandler {
   }
 
   private Message handlePoll(PollReq req) {
-    List<LogRecord> records =
-        partitionManager.poll(req.topic(), req.partition(), req.offset(), maxPollBytes);
+    List<LogRecord> records;
+    try {
+      records = partitionManager.poll(req.topic(), req.partition(), req.offset(), maxPollBytes);
+    } catch (OffsetOutOfRangeException e) {
+      return new ErrorResp(req.correlationId(), ErrorResp.CODE_OFFSET_OUT_OF_RANGE, e.getMessage());
+    }
     List<PollResp.Record> batch =
         records.stream().map(r -> new PollResp.Record(r.offset(), r.value())).toList();
     return new PollResp(req.correlationId(), batch);

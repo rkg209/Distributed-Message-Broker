@@ -1,5 +1,6 @@
 package io.minikafka.broker;
 
+import io.minikafka.log.DiskPartitionLog;
 import io.minikafka.protocol.BrokerInfo;
 import java.io.IOException;
 import org.slf4j.Logger;
@@ -7,8 +8,8 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Entry point for running a broker process standalone (manual testing, Docker). Reads {@link
- * BrokerConfig} from the environment, starts a {@link ConnectionAcceptor} with the Spec 02 {@link
- * BrokerRequestHandler}, and blocks until interrupted.
+ * BrokerConfig} from the environment, starts a {@link ConnectionAcceptor} with the {@link
+ * BrokerRequestHandler} over a durable, disk-backed log, and blocks until interrupted.
  */
 public final class Main {
 
@@ -18,7 +19,8 @@ public final class Main {
     BrokerConfig config = BrokerConfig.fromEnv();
     BrokerInfo self = new BrokerInfo(config.brokerId(), config.brokerHost(), config.brokerPort());
 
-    TopicRegistry topicRegistry = new TopicRegistry();
+    TopicRegistry topicRegistry =
+        new TopicRegistry(tp -> new DiskPartitionLog(config.logConfigFor(tp)));
     PartitionManager partitionManager = new PartitionManager(topicRegistry);
     BrokerRequestHandler handler =
         new BrokerRequestHandler(self, partitionManager, config.maxPollBytes());
