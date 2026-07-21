@@ -22,7 +22,11 @@ class MessageCodecTest {
         new PublishReq(1L, "orders", 3, new byte[] {1, 2, 3, 4}),
         new PublishResp(2L, 42L),
         new PollReq(3L, "orders", 3, 100L),
-        new PollResp(4L, 100L, new byte[] {9, 8, 7}),
+        new PollResp(
+            4L,
+            List.of(
+                new PollResp.Record(100L, new byte[] {9, 8, 7}),
+                new PollResp.Record(101L, new byte[] {6}))),
         new CommitOffsetReq(5L, "group-a", "orders", 3, 99L),
         new CommitOffsetResp(6L, true),
         new MetadataReq(7L),
@@ -69,6 +73,12 @@ class MessageCodecTest {
   @Test
   void metadataRespWithNoBrokersRoundTrips() throws ProtocolException {
     MetadataResp original = new MetadataResp(1L, List.of());
+    assertEquals(original, codec.decode(codec.encode(original)));
+  }
+
+  @Test
+  void pollRespWithEmptyBatchRoundTrips() throws ProtocolException {
+    PollResp original = new PollResp(1L, List.of());
     assertEquals(original, codec.decode(codec.encode(original)));
   }
 

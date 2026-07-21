@@ -12,4 +12,6 @@ dependencies {
     implementation(project(":raft"))
 
     implementation("ch.qos.logback:logback-classic:1.5.12")
+
+    testImplementation(project(":client"))
 }

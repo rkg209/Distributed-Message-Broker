@@ -43,8 +43,11 @@ public final class MessageCodec {
         }
         case PollResp m -> {
           out.writeLong(m.correlationId());
-          out.writeLong(m.offset());
-          writeBytes(out, m.payload());
+          out.writeInt(m.records().size());
+          for (PollResp.Record r : m.records()) {
+            out.writeLong(r.offset());
+            writeBytes(out, r.payload());
+          }
         }
         case CommitOffsetReq m -> {
           out.writeLong(m.correlationId());
@@ -124,7 +127,7 @@ public final class MessageCodec {
             case PUBLISH_RESP -> new PublishResp(in.readLong(), in.readLong());
             case POLL_REQ ->
                 new PollReq(in.readLong(), readString(in), in.readInt(), in.readLong());
-            case POLL_RESP -> new PollResp(in.readLong(), in.readLong(), readBytes(in));
+            case POLL_RESP -> decodePollResp(in);
             case COMMIT_OFFSET_REQ ->
                 new CommitOffsetReq(
                     in.readLong(), readString(in), readString(in), in.readInt(), in.readLong());
@@ -169,6 +172,19 @@ public final class MessageCodec {
       brokers.add(new BrokerInfo(brokerId, host, port));
     }
     return new MetadataResp(correlationId, brokers);
+  }
+
+  private static PollResp decodePollResp(DataInputStream in) throws IOException {
+    long correlationId = in.readLong();
+    int count = in.readInt();
+    if (count < 0) {
+      throw new ProtocolException("Negative record count: " + count);
+    }
+    List<PollResp.Record> records = new ArrayList<>(Math.min(count, 1024));
+    for (int i = 0; i < count; i++) {
+      records.add(new PollResp.Record(in.readLong(), readBytes(in)));
+    }
+    return new PollResp(correlationId, records);
   }
 
   private static void writeString(DataOutputStream out, String value) throws IOException {

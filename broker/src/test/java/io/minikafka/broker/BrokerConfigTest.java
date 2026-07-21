@@ -49,6 +49,30 @@ class BrokerConfigTest {
   }
 
   @Test
+  void defaultsMaxPollBytesWhenUnset() {
+    Map<String, String> env =
+        Map.of("BROKER_ID", "1", "BROKER_HOST", "localhost", "BROKER_PORT", "9092");
+
+    BrokerConfig config = BrokerConfig.fromEnv(env::get);
+
+    assertEquals(1024 * 1024, config.maxPollBytes());
+  }
+
+  @Test
+  void parsesMaxPollBytesWhenSet() {
+    Map<String, String> env =
+        Map.of(
+            "BROKER_ID", "1",
+            "BROKER_HOST", "localhost",
+            "BROKER_PORT", "9092",
+            "BROKER_MAX_POLL_BYTES", "2048");
+
+    BrokerConfig config = BrokerConfig.fromEnv(env::get);
+
+    assertEquals(2048, config.maxPollBytes());
+  }
+
+  @Test
   void throwsWhenRequiredVariableIsMissing() {
     Map<String, String> env = Map.of("BROKER_HOST", "localhost", "BROKER_PORT", "9092");
 
