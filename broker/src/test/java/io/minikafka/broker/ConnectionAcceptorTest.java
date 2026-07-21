@@ -82,7 +82,7 @@ class ConnectionAcceptorTest {
     try (Socket socket = connect();
         InputStream in = socket.getInputStream();
         OutputStream out = socket.getOutputStream()) {
-      new FrameEncoder(out).write(codec.encode(new PublishReq(5L, "t", 0, new byte[] {1})));
+      new FrameEncoder(out).write(codec.encode(new PublishReq(5L, "t", 0, null, new byte[] {1})));
 
       Message response = codec.decode(new FrameDecoder(in, MAX).read());
       ErrorResp error = assertInstanceOf(ErrorResp.class, response);

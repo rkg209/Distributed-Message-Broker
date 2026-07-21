@@ -34,17 +34,22 @@ class DiskPublishConsumeE2ETest {
 
   private ConnectionAcceptor acceptor;
   private TopicRegistry topicRegistry;
+  private ConsumerGroupManager consumerGroupManager;
 
   @BeforeEach
   void startBroker(@TempDir Path tempDir) throws IOException {
     BrokerInfo self = new BrokerInfo(1, "localhost", 0);
+    MetadataService metadataService = new MetadataService(self, TopicConfig.parse(null, 1));
     topicRegistry =
         new TopicRegistry(
             tp ->
                 new DiskPartitionLog(
                     LogConfig.defaultsFor(tempDir.resolve(tp.topic() + "-" + tp.partition()))));
-    PartitionManager partitionManager = new PartitionManager(topicRegistry);
-    BrokerRequestHandler handler = new BrokerRequestHandler(self, partitionManager, 1024 * 1024);
+    PartitionManager partitionManager = new PartitionManager(topicRegistry, metadataService);
+    consumerGroupManager = new ConsumerGroupManager(tempDir.resolve("offsets"));
+    BrokerRequestHandler handler =
+        new BrokerRequestHandler(
+            metadataService, partitionManager, consumerGroupManager, 1024 * 1024);
     acceptor = new ConnectionAcceptor(0, ProtocolConfig.DEFAULT_MAX_FRAME_BYTES, handler);
     acceptor.start();
   }
@@ -53,6 +58,7 @@ class DiskPublishConsumeE2ETest {
   void stopBroker() {
     acceptor.close();
     topicRegistry.close();
+    consumerGroupManager.close();
   }
 
   @Test

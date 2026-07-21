@@ -3,8 +3,11 @@ package io.minikafka.broker;
 import io.minikafka.log.AppendResult;
 import io.minikafka.log.LogRecord;
 import io.minikafka.log.OffsetOutOfRangeException;
-import io.minikafka.protocol.BrokerInfo;
+import io.minikafka.protocol.CommitOffsetReq;
+import io.minikafka.protocol.CommitOffsetResp;
 import io.minikafka.protocol.ErrorResp;
+import io.minikafka.protocol.FetchOffsetReq;
+import io.minikafka.protocol.FetchOffsetResp;
 import io.minikafka.protocol.Message;
 import io.minikafka.protocol.MetadataReq;
 import io.minikafka.protocol.MetadataResp;
@@ -15,19 +18,24 @@ import io.minikafka.protocol.PublishResp;
 import java.util.List;
 
 /**
- * Real request handler backing the Spec 02 publish/poll/metadata slice. Replaces {@link
- * StubRequestHandler}.
+ * Real request handler backing the Spec 02–04 publish/poll/metadata/consumer-group slice. Replaces
+ * {@link StubRequestHandler}.
  */
 public final class BrokerRequestHandler implements RequestHandler {
 
-  private final BrokerInfo self;
   private final PartitionManager partitionManager;
+  private final MetadataService metadataService;
+  private final ConsumerGroupManager consumerGroupManager;
   private final int maxPollBytes;
 
   public BrokerRequestHandler(
-      BrokerInfo self, PartitionManager partitionManager, int maxPollBytes) {
-    this.self = self;
+      MetadataService metadataService,
+      PartitionManager partitionManager,
+      ConsumerGroupManager consumerGroupManager,
+      int maxPollBytes) {
+    this.metadataService = metadataService;
     this.partitionManager = partitionManager;
+    this.consumerGroupManager = consumerGroupManager;
     this.maxPollBytes = maxPollBytes;
   }
 
@@ -36,7 +44,13 @@ public final class BrokerRequestHandler implements RequestHandler {
     return switch (request) {
       case PublishReq req -> handlePublish(req);
       case PollReq req -> handlePoll(req);
-      case MetadataReq req -> new MetadataResp(req.correlationId(), List.of(self));
+      case MetadataReq req ->
+          new MetadataResp(
+              req.correlationId(),
+              List.of(metadataService.self()),
+              metadataService.describeTopics());
+      case CommitOffsetReq req -> handleCommitOffset(req);
+      case FetchOffsetReq req -> handleFetchOffset(req);
       default ->
           new ErrorResp(
               request.correlationId(),
@@ -46,7 +60,12 @@ public final class BrokerRequestHandler implements RequestHandler {
   }
 
   private Message handlePublish(PublishReq req) {
-    AppendResult result = partitionManager.publish(req.topic(), req.partition(), req.payload());
+    AppendResult result;
+    try {
+      result = partitionManager.publish(req.topic(), req.partition(), req.key(), req.payload());
+    } catch (UnknownPartitionException e) {
+      return new ErrorResp(req.correlationId(), ErrorResp.CODE_UNKNOWN_PARTITION, e.getMessage());
+    }
     return new PublishResp(req.correlationId(), result.offset());
   }
 
@@ -54,11 +73,23 @@ public final class BrokerRequestHandler implements RequestHandler {
     List<LogRecord> records;
     try {
       records = partitionManager.poll(req.topic(), req.partition(), req.offset(), maxPollBytes);
+    } catch (UnknownPartitionException e) {
+      return new ErrorResp(req.correlationId(), ErrorResp.CODE_UNKNOWN_PARTITION, e.getMessage());
     } catch (OffsetOutOfRangeException e) {
       return new ErrorResp(req.correlationId(), ErrorResp.CODE_OFFSET_OUT_OF_RANGE, e.getMessage());
     }
     List<PollResp.Record> batch =
         records.stream().map(r -> new PollResp.Record(r.offset(), r.value())).toList();
     return new PollResp(req.correlationId(), batch);
+  }
+
+  private Message handleCommitOffset(CommitOffsetReq req) {
+    consumerGroupManager.commit(req.group(), req.topic(), req.partition(), req.offset());
+    return new CommitOffsetResp(req.correlationId(), true);
+  }
+
+  private Message handleFetchOffset(FetchOffsetReq req) {
+    long offset = consumerGroupManager.fetch(req.group(), req.topic(), req.partition());
+    return new FetchOffsetResp(req.correlationId(), offset);
   }
 }

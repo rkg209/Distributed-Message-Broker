@@ -23,7 +23,7 @@ public final class StubRequestHandler implements RequestHandler {
   @Override
   public Message handle(Message request) {
     if (request instanceof MetadataReq req) {
-      return new MetadataResp(req.correlationId(), List.of(self));
+      return new MetadataResp(req.correlationId(), List.of(self), List.of());
     }
     return new ErrorResp(
         request.correlationId(),

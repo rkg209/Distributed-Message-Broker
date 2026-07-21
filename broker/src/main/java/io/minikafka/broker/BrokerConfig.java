@@ -22,7 +22,9 @@ public record BrokerConfig(
     int segmentBytes,
     int indexIntervalBytes,
     long retentionBytes,
-    long retentionMs) {
+    long retentionMs,
+    TopicConfig topicConfig,
+    String offsetDir) {
 
   private static final String BROKER_ID = "BROKER_ID";
   private static final String BROKER_HOST = "BROKER_HOST";
@@ -36,7 +38,12 @@ public record BrokerConfig(
   private static final String BROKER_INDEX_INTERVAL_BYTES = "BROKER_INDEX_INTERVAL_BYTES";
   private static final String BROKER_RETENTION_BYTES = "BROKER_RETENTION_BYTES";
   private static final String BROKER_RETENTION_MS = "BROKER_RETENTION_MS";
+  private static final String BROKER_TOPICS = "BROKER_TOPICS";
+  private static final String BROKER_DEFAULT_PARTITIONS = "BROKER_DEFAULT_PARTITIONS";
+  private static final String BROKER_OFFSET_DIR = "BROKER_OFFSET_DIR";
   private static final int DEFAULT_MAX_POLL_BYTES = 1024 * 1024;
+  private static final int DEFAULT_PARTITIONS = 1;
+  private static final String DEFAULT_OFFSET_SUBDIR = "__offsets";
 
   /**
    * Loads configuration from environment variables. Throws if a required variable is missing or
@@ -62,6 +69,10 @@ public record BrokerConfig(
         optionalInt(env, BROKER_INDEX_INTERVAL_BYTES, LogConfig.DEFAULT_INDEX_INTERVAL_BYTES);
     long retentionBytes = optionalLong(env, BROKER_RETENTION_BYTES, LogConfig.UNLIMITED);
     long retentionMs = optionalLong(env, BROKER_RETENTION_MS, LogConfig.UNLIMITED);
+    int defaultPartitions = optionalInt(env, BROKER_DEFAULT_PARTITIONS, DEFAULT_PARTITIONS);
+    TopicConfig topicConfig = TopicConfig.parse(env.apply(BROKER_TOPICS), defaultPartitions);
+    String offsetDir =
+        optionalString(env, BROKER_OFFSET_DIR, Path.of(logDir, DEFAULT_OFFSET_SUBDIR).toString());
     return new BrokerConfig(
         brokerId,
         brokerHost,
@@ -74,7 +85,9 @@ public record BrokerConfig(
         segmentBytes,
         indexIntervalBytes,
         retentionBytes,
-        retentionMs);
+        retentionMs,
+        topicConfig,
+        offsetDir);
   }
 
   private static FsyncPolicy parseFsyncPolicy(String value) {
@@ -109,6 +122,17 @@ public record BrokerConfig(
         indexIntervalBytes,
         retentionBytes,
         retentionMs);
+  }
+
+  /** Resolves the offset-store directory as a {@link Path}. */
+  public Path offsetDirPath() {
+    return Path.of(offsetDir);
+  }
+
+  private static String optionalString(
+      java.util.function.Function<String, String> env, String name, String defaultValue) {
+    String value = env.apply(name);
+    return value == null || value.isBlank() ? defaultValue : value;
   }
 
   private static String requireEnv(java.util.function.Function<String, String> env, String name) {

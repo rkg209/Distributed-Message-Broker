@@ -19,11 +19,14 @@ public final class Main {
     BrokerConfig config = BrokerConfig.fromEnv();
     BrokerInfo self = new BrokerInfo(config.brokerId(), config.brokerHost(), config.brokerPort());
 
+    MetadataService metadataService = new MetadataService(self, config.topicConfig());
     TopicRegistry topicRegistry =
         new TopicRegistry(tp -> new DiskPartitionLog(config.logConfigFor(tp)));
-    PartitionManager partitionManager = new PartitionManager(topicRegistry);
+    PartitionManager partitionManager = new PartitionManager(topicRegistry, metadataService);
+    ConsumerGroupManager consumerGroupManager = new ConsumerGroupManager(config.offsetDirPath());
     BrokerRequestHandler handler =
-        new BrokerRequestHandler(self, partitionManager, config.maxPollBytes());
+        new BrokerRequestHandler(
+            metadataService, partitionManager, consumerGroupManager, config.maxPollBytes());
 
     ConnectionAcceptor acceptor =
         new ConnectionAcceptor(config.brokerPort(), config.maxFrameBytes(), handler);
@@ -40,6 +43,7 @@ public final class Main {
                 () -> {
                   acceptor.close();
                   topicRegistry.close();
+                  consumerGroupManager.close();
                 },
                 "broker-shutdown"));
     Thread.currentThread().join();

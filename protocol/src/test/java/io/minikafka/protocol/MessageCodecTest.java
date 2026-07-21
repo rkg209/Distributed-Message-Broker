@@ -19,7 +19,7 @@ class MessageCodecTest {
 
   static Stream<Message> everyMessageType() {
     return Stream.of(
-        new PublishReq(1L, "orders", 3, new byte[] {1, 2, 3, 4}),
+        new PublishReq(1L, "orders", 3, new byte[] {5, 6}, new byte[] {1, 2, 3, 4}),
         new PublishResp(2L, 42L),
         new PollReq(3L, "orders", 3, 100L),
         new PollResp(
@@ -31,14 +31,20 @@ class MessageCodecTest {
         new CommitOffsetResp(6L, true),
         new MetadataReq(7L),
         new MetadataResp(
-            8L, List.of(new BrokerInfo(1, "broker-1", 9092), new BrokerInfo(2, "broker-2", 9093))),
+            8L,
+            List.of(new BrokerInfo(1, "broker-1", 9092), new BrokerInfo(2, "broker-2", 9093)),
+            List.of(
+                new TopicMetadata(
+                    "orders", List.of(new PartitionMetadata(0, 1), new PartitionMetadata(1, 1))))),
         new AppendEntriesReq(9L, 5L, 1),
         new AppendEntriesResp(10L, 5L, true),
         new RequestVoteReq(11L, 6L, 2),
         new RequestVoteResp(12L, 6L, false),
         new HeartbeatReq(13L, 7L, 1),
         new HeartbeatResp(14L, 7L),
-        new ErrorResp(15L, ErrorResp.CODE_PROTOCOL_ERROR, "bad frame"));
+        new ErrorResp(15L, ErrorResp.CODE_PROTOCOL_ERROR, "bad frame"),
+        new FetchOffsetReq(16L, "group-a", "orders", 3),
+        new FetchOffsetResp(17L, 99L));
   }
 
   @ParameterizedTest
@@ -60,19 +66,27 @@ class MessageCodecTest {
   }
 
   @Test
-  void allFifteenTypesAreCovered() {
+  void allTypesAreCovered() {
     assertEquals(MessageType.values().length, everyMessageType().count());
   }
 
   @Test
   void emptyPayloadRoundTrips() throws ProtocolException {
-    PublishReq original = new PublishReq(1L, "t", 0, new byte[0]);
+    PublishReq original = new PublishReq(1L, "t", 0, null, new byte[0]);
     assertEquals(original, codec.decode(codec.encode(original)));
   }
 
   @Test
-  void metadataRespWithNoBrokersRoundTrips() throws ProtocolException {
-    MetadataResp original = new MetadataResp(1L, List.of());
+  void nullKeyRoundTrips() throws ProtocolException {
+    PublishReq original = new PublishReq(1L, "t", 0, null, new byte[] {1});
+    Message decoded = codec.decode(codec.encode(original));
+    assertEquals(original, decoded);
+    assertEquals(null, ((PublishReq) decoded).key());
+  }
+
+  @Test
+  void metadataRespWithNoBrokersOrTopicsRoundTrips() throws ProtocolException {
+    MetadataResp original = new MetadataResp(1L, List.of(), List.of());
     assertEquals(original, codec.decode(codec.encode(original)));
   }
 

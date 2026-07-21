@@ -138,4 +138,50 @@ class BrokerConfigTest {
 
     assertEquals(java.nio.file.Path.of("/tmp/mini-kafka-test", "orders-0"), logConfig.dir());
   }
+
+  @Test
+  void defaultsTopicConfigWhenUnset() {
+    BrokerConfig config = BrokerConfig.fromEnv(baseEnv()::get);
+
+    assertEquals(1, config.topicConfig().partitionCountFor("anything"));
+  }
+
+  @Test
+  void parsesBrokerTopicsAndDefaultPartitions() {
+    Map<String, String> env = baseEnv();
+    env.put("BROKER_TOPICS", "orders:4,events:8");
+    env.put("BROKER_DEFAULT_PARTITIONS", "2");
+
+    BrokerConfig config = BrokerConfig.fromEnv(env::get);
+
+    assertEquals(4, config.topicConfig().partitionCountFor("orders"));
+    assertEquals(8, config.topicConfig().partitionCountFor("events"));
+    assertEquals(2, config.topicConfig().partitionCountFor("unlisted"));
+  }
+
+  @Test
+  void throwsOnMalformedBrokerTopics() {
+    Map<String, String> env = baseEnv();
+    env.put("BROKER_TOPICS", "orders-4");
+
+    assertThrows(IllegalStateException.class, () -> BrokerConfig.fromEnv(env::get));
+  }
+
+  @Test
+  void defaultsOffsetDirUnderLogDir() {
+    BrokerConfig config = BrokerConfig.fromEnv(baseEnv()::get);
+
+    assertEquals(
+        java.nio.file.Path.of("/tmp/mini-kafka-test", "__offsets"), config.offsetDirPath());
+  }
+
+  @Test
+  void parsesOffsetDirWhenSet() {
+    Map<String, String> env = baseEnv();
+    env.put("BROKER_OFFSET_DIR", "/tmp/custom-offsets");
+
+    BrokerConfig config = BrokerConfig.fromEnv(env::get);
+
+    assertEquals(java.nio.file.Path.of("/tmp/custom-offsets"), config.offsetDirPath());
+  }
 }

@@ -18,6 +18,8 @@ public sealed interface Message
         CommitOffsetResp,
         MetadataReq,
         MetadataResp,
+        FetchOffsetReq,
+        FetchOffsetResp,
         AppendEntriesReq,
         AppendEntriesResp,
         RequestVoteReq,

@@ -29,6 +29,7 @@ public final class MessageCodec {
           out.writeLong(m.correlationId());
           writeString(out, m.topic());
           out.writeInt(m.partition());
+          writeNullableBytes(out, m.key());
           writeBytes(out, m.payload());
         }
         case PublishResp m -> {
@@ -69,6 +70,25 @@ public final class MessageCodec {
             writeString(out, b.host());
             out.writeInt(b.port());
           }
+          out.writeInt(m.topics().size());
+          for (TopicMetadata t : m.topics()) {
+            writeString(out, t.topic());
+            out.writeInt(t.partitions().size());
+            for (PartitionMetadata p : t.partitions()) {
+              out.writeInt(p.partitionId());
+              out.writeInt(p.leaderId());
+            }
+          }
+        }
+        case FetchOffsetReq m -> {
+          out.writeLong(m.correlationId());
+          writeString(out, m.group());
+          writeString(out, m.topic());
+          out.writeInt(m.partition());
+        }
+        case FetchOffsetResp m -> {
+          out.writeLong(m.correlationId());
+          out.writeLong(m.offset());
         }
         case AppendEntriesReq m -> {
           out.writeLong(m.correlationId());
@@ -123,7 +143,12 @@ public final class MessageCodec {
       Message message =
           switch (frame.type()) {
             case PUBLISH_REQ ->
-                new PublishReq(in.readLong(), readString(in), in.readInt(), readBytes(in));
+                new PublishReq(
+                    in.readLong(),
+                    readString(in),
+                    in.readInt(),
+                    readNullableBytes(in),
+                    readBytes(in));
             case PUBLISH_RESP -> new PublishResp(in.readLong(), in.readLong());
             case POLL_REQ ->
                 new PollReq(in.readLong(), readString(in), in.readInt(), in.readLong());
@@ -134,6 +159,9 @@ public final class MessageCodec {
             case COMMIT_OFFSET_RESP -> new CommitOffsetResp(in.readLong(), in.readBoolean());
             case METADATA_REQ -> new MetadataReq(in.readLong());
             case METADATA_RESP -> decodeMetadataResp(in);
+            case FETCH_OFFSET_REQ ->
+                new FetchOffsetReq(in.readLong(), readString(in), readString(in), in.readInt());
+            case FETCH_OFFSET_RESP -> new FetchOffsetResp(in.readLong(), in.readLong());
             case APPEND_ENTRIES_REQ ->
                 new AppendEntriesReq(in.readLong(), in.readLong(), in.readInt());
             case APPEND_ENTRIES_RESP ->
@@ -160,18 +188,37 @@ public final class MessageCodec {
 
   private static MetadataResp decodeMetadataResp(DataInputStream in) throws IOException {
     long correlationId = in.readLong();
-    int count = in.readInt();
-    if (count < 0) {
-      throw new ProtocolException("Negative broker count: " + count);
+    int brokerCount = in.readInt();
+    if (brokerCount < 0) {
+      throw new ProtocolException("Negative broker count: " + brokerCount);
     }
-    List<BrokerInfo> brokers = new ArrayList<>(Math.min(count, 1024));
-    for (int i = 0; i < count; i++) {
+    List<BrokerInfo> brokers = new ArrayList<>(Math.min(brokerCount, 1024));
+    for (int i = 0; i < brokerCount; i++) {
       int brokerId = in.readInt();
       String host = readString(in);
       int port = in.readInt();
       brokers.add(new BrokerInfo(brokerId, host, port));
     }
-    return new MetadataResp(correlationId, brokers);
+    int topicCount = in.readInt();
+    if (topicCount < 0) {
+      throw new ProtocolException("Negative topic count: " + topicCount);
+    }
+    List<TopicMetadata> topics = new ArrayList<>(Math.min(topicCount, 1024));
+    for (int i = 0; i < topicCount; i++) {
+      String topic = readString(in);
+      int partitionCount = in.readInt();
+      if (partitionCount < 0) {
+        throw new ProtocolException("Negative partition count: " + partitionCount);
+      }
+      List<PartitionMetadata> partitions = new ArrayList<>(Math.min(partitionCount, 1024));
+      for (int j = 0; j < partitionCount; j++) {
+        int partitionId = in.readInt();
+        int leaderId = in.readInt();
+        partitions.add(new PartitionMetadata(partitionId, leaderId));
+      }
+      topics.add(new TopicMetadata(topic, partitions));
+    }
+    return new MetadataResp(correlationId, brokers, topics);
   }
 
   private static PollResp decodePollResp(DataInputStream in) throws IOException {
@@ -205,6 +252,23 @@ public final class MessageCodec {
 
   private static byte[] readBytes(DataInputStream in) throws IOException {
     return readN(in, in.readInt());
+  }
+
+  private static void writeNullableBytes(DataOutputStream out, byte[] value) throws IOException {
+    if (value == null) {
+      out.writeInt(-1);
+    } else {
+      out.writeInt(value.length);
+      out.write(value);
+    }
+  }
+
+  private static byte[] readNullableBytes(DataInputStream in) throws IOException {
+    int length = in.readInt();
+    if (length == -1) {
+      return null;
+    }
+    return readN(in, length);
   }
 
   private static byte[] readN(DataInputStream in, int length) throws IOException {

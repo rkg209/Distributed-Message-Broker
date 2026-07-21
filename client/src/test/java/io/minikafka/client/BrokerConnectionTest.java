@@ -79,7 +79,7 @@ class BrokerConnectionTest {
         startServer(
             req ->
                 new MetadataResp(
-                    req.correlationId(), List.of(new BrokerInfo(1, "localhost", 9092))));
+                    req.correlationId(), List.of(new BrokerInfo(1, "localhost", 9092)), List.of()));
 
     try (BrokerConnection conn = new BrokerConnection("localhost", port, MAX)) {
       long id = conn.nextCorrelationId();
@@ -91,7 +91,7 @@ class BrokerConnectionTest {
 
   @Test
   void correlationIdsAreUnique() throws IOException {
-    int port = startServer(req -> new MetadataResp(req.correlationId(), List.of()));
+    int port = startServer(req -> new MetadataResp(req.correlationId(), List.of(), List.of()));
     try (BrokerConnection conn = new BrokerConnection("localhost", port, MAX)) {
       assertNotEquals(conn.nextCorrelationId(), conn.nextCorrelationId());
     }
@@ -101,7 +101,7 @@ class BrokerConnectionTest {
   @Timeout(10)
   void mismatchedCorrelationIdThrows() throws IOException {
     // Server deliberately replies with the wrong correlation id.
-    int port = startServer(req -> new MetadataResp(req.correlationId() + 1, List.of()));
+    int port = startServer(req -> new MetadataResp(req.correlationId() + 1, List.of(), List.of()));
 
     try (BrokerConnection conn = new BrokerConnection("localhost", port, MAX)) {
       assertThrows(ProtocolException.class, () -> conn.request(new MetadataReq(1L)));

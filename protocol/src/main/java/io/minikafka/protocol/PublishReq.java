@@ -2,8 +2,9 @@ package io.minikafka.protocol;
 
 import java.util.Arrays;
 
-/** Client → Broker: publish a record to a topic partition. */
-public record PublishReq(long correlationId, String topic, int partition, byte[] payload)
+/** Client → Broker: publish a record to a topic partition, with an optional routing key. */
+public record PublishReq(
+    long correlationId, String topic, int partition, byte[] key, byte[] payload)
     implements Message {
 
   public PublishReq {
@@ -29,6 +30,7 @@ public record PublishReq(long correlationId, String topic, int partition, byte[]
         && correlationId == p.correlationId
         && partition == p.partition
         && topic.equals(p.topic)
+        && Arrays.equals(key, p.key)
         && Arrays.equals(payload, p.payload);
   }
 
@@ -37,6 +39,7 @@ public record PublishReq(long correlationId, String topic, int partition, byte[]
     int result = Long.hashCode(correlationId);
     result = 31 * result + topic.hashCode();
     result = 31 * result + partition;
+    result = 31 * result + Arrays.hashCode(key);
     result = 31 * result + Arrays.hashCode(payload);
     return result;
   }
@@ -49,6 +52,8 @@ public record PublishReq(long correlationId, String topic, int partition, byte[]
         + topic
         + ", partition="
         + partition
+        + ", keyLen="
+        + (key == null ? -1 : key.length)
         + ", payloadLen="
         + payload.length
         + "]";

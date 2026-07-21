@@ -19,6 +19,9 @@ public record ErrorResp(long correlationId, int errorCode, String message) imple
   /** The requested offset is below the partition's retained range (deleted by retention). */
   public static final int CODE_OFFSET_OUT_OF_RANGE = 3;
 
+  /** The requested partition id is outside the topic's configured partition count. */
+  public static final int CODE_UNKNOWN_PARTITION = 4;
+
   public ErrorResp {
     if (message == null) {
       throw new IllegalArgumentException("message must not be null");

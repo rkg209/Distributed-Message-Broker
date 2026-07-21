@@ -11,11 +11,13 @@ import io.minikafka.protocol.PollResp;
 import io.minikafka.protocol.ProtocolConfig;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /** Spec 02 acceptance: a real producer publishes over TCP and a real consumer polls it back. */
 class PublishConsumeE2ETest {
@@ -26,13 +28,18 @@ class PublishConsumeE2ETest {
 
   private ConnectionAcceptor acceptor;
   private TopicRegistry topicRegistry;
+  private ConsumerGroupManager consumerGroupManager;
 
   @BeforeEach
-  void startBroker() throws IOException {
+  void startBroker(@TempDir Path tempDir) throws IOException {
     BrokerInfo self = new BrokerInfo(1, "localhost", 0);
+    MetadataService metadataService = new MetadataService(self, TopicConfig.parse(null, 1));
     topicRegistry = new TopicRegistry();
-    PartitionManager partitionManager = new PartitionManager(topicRegistry);
-    BrokerRequestHandler handler = new BrokerRequestHandler(self, partitionManager, 1024 * 1024);
+    PartitionManager partitionManager = new PartitionManager(topicRegistry, metadataService);
+    consumerGroupManager = new ConsumerGroupManager(tempDir.resolve("offsets"));
+    BrokerRequestHandler handler =
+        new BrokerRequestHandler(
+            metadataService, partitionManager, consumerGroupManager, 1024 * 1024);
     acceptor = new ConnectionAcceptor(0, ProtocolConfig.DEFAULT_MAX_FRAME_BYTES, handler);
     acceptor.start();
   }
@@ -41,6 +48,7 @@ class PublishConsumeE2ETest {
   void stopBroker() {
     acceptor.close();
     topicRegistry.close();
+    consumerGroupManager.close();
   }
 
   @Test
