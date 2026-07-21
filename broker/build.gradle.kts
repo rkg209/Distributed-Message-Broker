@@ -1,3 +1,11 @@
+plugins {
+    application
+}
+
+application {
+    mainClass.set("io.minikafka.broker.Main")
+}
+
 dependencies {
     implementation(project(":protocol"))
     implementation(project(":log"))

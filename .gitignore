@@ -1,8 +1,58 @@
+# Build & Gradle
 .gradle/
 build/
 out/
-.idea/
-*.iml
-.DS_Store
+dist/
+*.jar
+*.war
+*.ear
 
+# IDE & Editor files
+.idea/
+.vscode/
+*.iml
+*.iws
+*.ipr
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# Claude Code & AI-related files
+.claude/
+.claude-*
+claude-config.json
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+.env.local
+
+# Local configuration
+local.properties
+gradle.properties.local
+
+# Log files
+*.log
+logs/
+
+# Temporary files
+*.tmp
+.temp/
+temp/
+
+# IntelliJ Workspace
+.idea/workspace.xml
+.idea/tasks.xml
+.idea/shelf/
+
+# Keep gradle wrapper
 !gradle/wrapper/gradle-wrapper.jar
+
+progress_report.md
+distributed-message-broker.md
+CLAUDE.md
+specs/
+planning/
