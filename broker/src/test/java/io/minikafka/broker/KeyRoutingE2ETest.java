@@ -7,6 +7,7 @@ import io.minikafka.client.BrokerConnection;
 import io.minikafka.client.MetadataClient;
 import io.minikafka.client.PartitionRouter;
 import io.minikafka.client.ProducerClient;
+import io.minikafka.log.InMemoryPartitionLog;
 import io.minikafka.protocol.BrokerInfo;
 import io.minikafka.protocol.ProtocolConfig;
 import java.io.IOException;
@@ -32,16 +33,24 @@ class KeyRoutingE2ETest {
   private static final int RECORD_COUNT = 10_000;
 
   private ConnectionAcceptor acceptor;
-  private TopicRegistry topicRegistry;
+  private PartitionManager partitionManager;
   private ConsumerGroupManager consumerGroupManager;
 
   @BeforeEach
   void startBroker(@TempDir Path tempDir) throws IOException {
-    BrokerInfo self = new BrokerInfo(1, "localhost", 0);
+    BrokerConfig config =
+        TestBrokerConfig.singleBroker(
+            tempDir.resolve("logs"),
+            tempDir.resolve("offsets"),
+            TopicConfig.parse(TOPIC + ":" + PARTITIONS, 1));
+    BrokerInfo self = new BrokerInfo(config.brokerId(), config.brokerHost(), config.brokerPort());
     MetadataService metadataService =
-        new MetadataService(self, TopicConfig.parse(TOPIC + ":" + PARTITIONS, 1));
-    topicRegistry = new TopicRegistry();
-    PartitionManager partitionManager = new PartitionManager(topicRegistry, metadataService);
+        new MetadataService(self, config.topicConfig(), config.clusterConfig());
+    partitionManager =
+        new PartitionManager(
+            config, metadataService, config.clusterConfig(), tp -> new InMemoryPartitionLog());
+    metadataService.attachPartitionManager(partitionManager);
+    partitionManager.start();
     consumerGroupManager = new ConsumerGroupManager(tempDir.resolve("offsets"));
     BrokerRequestHandler handler =
         new BrokerRequestHandler(
@@ -53,7 +62,7 @@ class KeyRoutingE2ETest {
   @AfterEach
   void stopBroker() {
     acceptor.close();
-    topicRegistry.close();
+    partitionManager.close();
     consumerGroupManager.close();
   }
 

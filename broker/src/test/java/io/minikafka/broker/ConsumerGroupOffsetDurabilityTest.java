@@ -6,7 +6,6 @@ import io.minikafka.client.BrokerConnection;
 import io.minikafka.client.ConsumerClient;
 import io.minikafka.client.ProducerClient;
 import io.minikafka.log.DiskPartitionLog;
-import io.minikafka.log.LogConfig;
 import io.minikafka.protocol.BrokerInfo;
 import io.minikafka.protocol.CommitOffsetReq;
 import io.minikafka.protocol.CommitOffsetResp;
@@ -35,30 +34,37 @@ class ConsumerGroupOffsetDurabilityTest {
   private static final String GROUP = "group-g";
 
   private record Broker(
-      ConnectionAcceptor acceptor, TopicRegistry topicRegistry, ConsumerGroupManager groupManager) {
+      ConnectionAcceptor acceptor,
+      PartitionManager partitionManager,
+      ConsumerGroupManager groupManager) {
     void stop() {
       acceptor.close();
-      topicRegistry.close();
+      partitionManager.close();
       groupManager.close();
     }
   }
 
   private Broker startBroker(Path logDir, Path offsetDir) throws IOException {
-    BrokerInfo self = new BrokerInfo(1, "localhost", 0);
-    MetadataService metadataService = new MetadataService(self, TopicConfig.parse(null, 1));
-    TopicRegistry topicRegistry =
-        new TopicRegistry(
-            tp ->
-                new DiskPartitionLog(
-                    LogConfig.defaultsFor(logDir.resolve(tp.topic() + "-" + tp.partition()))));
-    PartitionManager partitionManager = new PartitionManager(topicRegistry, metadataService);
+    BrokerConfig config =
+        TestBrokerConfig.singleBroker(logDir, offsetDir, TopicConfig.parse(null, 1));
+    BrokerInfo self = new BrokerInfo(config.brokerId(), config.brokerHost(), config.brokerPort());
+    MetadataService metadataService =
+        new MetadataService(self, config.topicConfig(), config.clusterConfig());
+    PartitionManager partitionManager =
+        new PartitionManager(
+            config,
+            metadataService,
+            config.clusterConfig(),
+            tp -> new DiskPartitionLog(config.logConfigFor(tp)));
+    metadataService.attachPartitionManager(partitionManager);
+    partitionManager.start();
     ConsumerGroupManager groupManager = new ConsumerGroupManager(offsetDir);
     BrokerRequestHandler handler =
         new BrokerRequestHandler(metadataService, partitionManager, groupManager, 1024 * 1024);
     ConnectionAcceptor acceptor =
         new ConnectionAcceptor(0, ProtocolConfig.DEFAULT_MAX_FRAME_BYTES, handler);
     acceptor.start();
-    return new Broker(acceptor, topicRegistry, groupManager);
+    return new Broker(acceptor, partitionManager, groupManager);
   }
 
   @Test

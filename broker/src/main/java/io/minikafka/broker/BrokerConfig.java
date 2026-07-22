@@ -4,6 +4,7 @@ import io.minikafka.log.FsyncPolicy;
 import io.minikafka.log.LogConfig;
 import io.minikafka.protocol.BrokerInfo;
 import io.minikafka.protocol.ProtocolConfig;
+import io.minikafka.raft.RaftConfig;
 import java.nio.file.Path;
 import java.util.Arrays;
 
@@ -29,7 +30,14 @@ public record BrokerConfig(
     ClusterConfig clusterConfig,
     long heartbeatIntervalMs,
     long heartbeatTimeoutMs,
-    long peerReconnectBackoffMs) {
+    long peerReconnectBackoffMs,
+    long raftElectionTimeoutMinMs,
+    long raftElectionTimeoutMaxMs,
+    long raftHeartbeatIntervalMs,
+    long raftRpcTimeoutMs,
+    int raftMaxEntriesPerAppend,
+    long raftProposeTimeoutMs,
+    long raftLeaderWaitMs) {
 
   private static final String BROKER_ID = "BROKER_ID";
   private static final String BROKER_HOST = "BROKER_HOST";
@@ -53,12 +61,21 @@ public record BrokerConfig(
   private static final String BROKER_HEARTBEAT_INTERVAL_MS = "BROKER_HEARTBEAT_INTERVAL_MS";
   private static final String BROKER_HEARTBEAT_TIMEOUT_MS = "BROKER_HEARTBEAT_TIMEOUT_MS";
   private static final String BROKER_PEER_RECONNECT_BACKOFF_MS = "BROKER_PEER_RECONNECT_BACKOFF_MS";
+  private static final String RAFT_ELECTION_TIMEOUT_MIN_MS = "RAFT_ELECTION_TIMEOUT_MIN_MS";
+  private static final String RAFT_ELECTION_TIMEOUT_MAX_MS = "RAFT_ELECTION_TIMEOUT_MAX_MS";
+  private static final String RAFT_HEARTBEAT_INTERVAL_MS = "RAFT_HEARTBEAT_INTERVAL_MS";
+  private static final String RAFT_RPC_TIMEOUT_MS = "RAFT_RPC_TIMEOUT_MS";
+  private static final String RAFT_MAX_ENTRIES_PER_APPEND = "RAFT_MAX_ENTRIES_PER_APPEND";
+  private static final String RAFT_PROPOSE_TIMEOUT_MS = "RAFT_PROPOSE_TIMEOUT_MS";
+  private static final String RAFT_LEADER_WAIT_MS = "RAFT_LEADER_WAIT_MS";
   private static final int DEFAULT_MAX_POLL_BYTES = 1024 * 1024;
   private static final int DEFAULT_PARTITIONS = 1;
   private static final String DEFAULT_OFFSET_SUBDIR = "__offsets";
   private static final long DEFAULT_HEARTBEAT_INTERVAL_MS = 500;
   private static final long DEFAULT_HEARTBEAT_TIMEOUT_MS = 2000;
   private static final long DEFAULT_PEER_RECONNECT_BACKOFF_MS = 500;
+  private static final long DEFAULT_RAFT_PROPOSE_TIMEOUT_MS = 5000;
+  private static final long DEFAULT_RAFT_LEADER_WAIT_MS = 2000;
 
   /**
    * Loads configuration from environment variables. Throws if a required variable is missing or
@@ -113,6 +130,19 @@ public record BrokerConfig(
         optionalLong(env, BROKER_HEARTBEAT_TIMEOUT_MS, DEFAULT_HEARTBEAT_TIMEOUT_MS);
     long peerReconnectBackoffMs =
         optionalLong(env, BROKER_PEER_RECONNECT_BACKOFF_MS, DEFAULT_PEER_RECONNECT_BACKOFF_MS);
+    long raftElectionTimeoutMinMs =
+        optionalLong(env, RAFT_ELECTION_TIMEOUT_MIN_MS, RaftConfig.DEFAULT_MIN_ELECTION_TIMEOUT_MS);
+    long raftElectionTimeoutMaxMs =
+        optionalLong(env, RAFT_ELECTION_TIMEOUT_MAX_MS, RaftConfig.DEFAULT_MAX_ELECTION_TIMEOUT_MS);
+    long raftHeartbeatIntervalMs =
+        optionalLong(env, RAFT_HEARTBEAT_INTERVAL_MS, RaftConfig.DEFAULT_HEARTBEAT_INTERVAL_MS);
+    long raftRpcTimeoutMs =
+        optionalLong(env, RAFT_RPC_TIMEOUT_MS, RaftConfig.DEFAULT_RPC_TIMEOUT_MS);
+    int raftMaxEntriesPerAppend =
+        optionalInt(env, RAFT_MAX_ENTRIES_PER_APPEND, RaftConfig.DEFAULT_MAX_ENTRIES_PER_APPEND);
+    long raftProposeTimeoutMs =
+        optionalLong(env, RAFT_PROPOSE_TIMEOUT_MS, DEFAULT_RAFT_PROPOSE_TIMEOUT_MS);
+    long raftLeaderWaitMs = optionalLong(env, RAFT_LEADER_WAIT_MS, DEFAULT_RAFT_LEADER_WAIT_MS);
 
     return new BrokerConfig(
         brokerId,
@@ -132,7 +162,14 @@ public record BrokerConfig(
         clusterConfig,
         heartbeatIntervalMs,
         heartbeatTimeoutMs,
-        peerReconnectBackoffMs);
+        peerReconnectBackoffMs,
+        raftElectionTimeoutMinMs,
+        raftElectionTimeoutMaxMs,
+        raftHeartbeatIntervalMs,
+        raftRpcTimeoutMs,
+        raftMaxEntriesPerAppend,
+        raftProposeTimeoutMs,
+        raftLeaderWaitMs);
   }
 
   private static FsyncPolicy parseFsyncPolicy(String value) {
@@ -172,6 +209,22 @@ public record BrokerConfig(
   /** Resolves the offset-store directory as a {@link Path}. */
   public Path offsetDirPath() {
     return Path.of(offsetDir);
+  }
+
+  /** Resolves the per-partition Raft state directory: {@code {logDir}/{topic}-{partition}/raft}. */
+  public Path raftStateDirFor(TopicPartition tp) {
+    return Path.of(logDir, tp.topic() + "-" + tp.partition(), "raft");
+  }
+
+  /** Builds the {@link RaftConfig} for {@code tp}'s Raft group from the configured tunables. */
+  public RaftConfig raftConfigFor(TopicPartition tp) {
+    return new RaftConfig(
+        raftElectionTimeoutMinMs,
+        raftElectionTimeoutMaxMs,
+        raftHeartbeatIntervalMs,
+        raftMaxEntriesPerAppend,
+        raftRpcTimeoutMs,
+        raftStateDirFor(tp));
   }
 
   private static String optionalString(

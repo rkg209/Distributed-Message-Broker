@@ -22,9 +22,13 @@ public final class Main {
 
     MetadataService metadataService =
         new MetadataService(self, config.topicConfig(), clusterConfig);
-    TopicRegistry topicRegistry =
-        new TopicRegistry(tp -> new DiskPartitionLog(config.logConfigFor(tp)));
-    PartitionManager partitionManager = new PartitionManager(topicRegistry, metadataService);
+    PartitionManager partitionManager =
+        new PartitionManager(
+            config,
+            metadataService,
+            clusterConfig,
+            tp -> new DiskPartitionLog(config.logConfigFor(tp)));
+    metadataService.attachPartitionManager(partitionManager);
     ConsumerGroupManager consumerGroupManager = new ConsumerGroupManager(config.offsetDirPath());
     BrokerRequestHandler handler =
         new BrokerRequestHandler(
@@ -32,12 +36,16 @@ public final class Main {
 
     ConnectionAcceptor acceptor =
         new ConnectionAcceptor(config.brokerPort(), config.maxFrameBytes(), handler);
+    // Must precede partitionManager.start(): peers cannot reach this broker during its first
+    // election otherwise.
     acceptor.start();
     log.info(
         "Broker {} listening on {}:{}",
         config.brokerId(),
         config.brokerHost(),
         acceptor.boundPort());
+
+    partitionManager.start();
 
     HeartbeatMonitor heartbeatMonitor =
         new HeartbeatMonitor(
@@ -60,7 +68,7 @@ public final class Main {
                 () -> {
                   heartbeatMonitor.close();
                   acceptor.close();
-                  topicRegistry.close();
+                  partitionManager.close();
                   consumerGroupManager.close();
                 },
                 "broker-shutdown"));

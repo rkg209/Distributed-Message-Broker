@@ -22,6 +22,9 @@ public record ErrorResp(long correlationId, int errorCode, String message) imple
   /** The requested partition id is outside the topic's configured partition count. */
   public static final int CODE_UNKNOWN_PARTITION = 4;
 
+  /** This broker is not the Raft leader for the requested partition. */
+  public static final int CODE_NOT_LEADER = 5;
+
   public ErrorResp {
     if (message == null) {
       throw new IllegalArgumentException("message must not be null");

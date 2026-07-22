@@ -312,6 +312,12 @@ public final class RaftNode implements AutoCloseable {
       req = new RequestVoteRequest(electionTerm, selfId, logStore.lastIndex(), logStore.lastTerm());
       targets = peerIds;
       log.info("Node {} starting election for term {}", selfId, electionTerm);
+      // A degenerate (peerless) Raft group is its own majority: with no peers to wait on,
+      // handleVoteResponse would never fire to notice votesGranted already clears the bar.
+      if (votesGranted.size() >= majoritySize()) {
+        becomeLeader();
+        return;
+      }
     } finally {
       lock.unlock();
     }

@@ -22,6 +22,10 @@ public final class MetadataService {
   private final ClusterConfig clusterConfig;
   private final Set<String> knownTopics = new ConcurrentSkipListSet<>();
 
+  // Set once via attachPartitionManager: PartitionManager's constructor takes a MetadataService,
+  // so the two objects have a construction-order cycle that a constructor parameter can't express.
+  private volatile PartitionManager partitionManager;
+
   public MetadataService(BrokerInfo self, TopicConfig topicConfig) {
     this(self, topicConfig, ClusterConfig.singleBroker(self));
   }
@@ -31,6 +35,11 @@ public final class MetadataService {
     this.topicConfig = topicConfig;
     this.clusterConfig = clusterConfig;
     knownTopics.addAll(topicConfig.partitionCounts().keySet());
+  }
+
+  /** Wires in the {@link PartitionManager} so {@link #describeTopics()} can report live leaders. */
+  public void attachPartitionManager(PartitionManager partitionManager) {
+    this.partitionManager = partitionManager;
   }
 
   /** The partition count for {@code topic}: configured, or {@code defaultPartitions}. */
@@ -68,17 +77,34 @@ public final class MetadataService {
       int partitionCount = topicConfig.partitionCountFor(topic);
       List<PartitionMetadata> partitions = new ArrayList<>(partitionCount);
       for (int p = 0; p < partitionCount; p++) {
-        TopicPartition tp = new TopicPartition(topic, p);
-        var assignment = clusterConfig.assignmentFor(tp);
-        if (assignment.isPresent()) {
-          partitions.add(
-              new PartitionMetadata(p, assignment.get().leaderId(), assignment.get().replicaIds()));
-        } else {
-          partitions.add(new PartitionMetadata(p, self.brokerId(), List.of(self.brokerId())));
-        }
+        partitions.add(describePartition(topic, p));
       }
       topics.add(new TopicMetadata(topic, partitions));
     }
     return topics;
+  }
+
+  private PartitionMetadata describePartition(String topic, int p) {
+    TopicPartition tp = new TopicPartition(topic, p);
+    var assignment = clusterConfig.assignmentFor(tp);
+    List<Integer> replicaIds =
+        assignment
+            .map(ClusterConfig.PartitionAssignment::replicaIds)
+            .orElse(List.of(self.brokerId()));
+
+    PartitionManager pm = partitionManager;
+    if (pm != null) {
+      PartitionReplica replica = pm.replica(tp);
+      if (replica != null) {
+        int liveLeader = replica.leaderId();
+        if (liveLeader != io.minikafka.raft.PersistentState.NONE) {
+          return new PartitionMetadata(p, liveLeader, replicaIds);
+        }
+      }
+    }
+
+    int fallbackLeader =
+        assignment.map(ClusterConfig.PartitionAssignment::leaderId).orElse(self.brokerId());
+    return new PartitionMetadata(p, fallbackLeader, replicaIds);
   }
 }

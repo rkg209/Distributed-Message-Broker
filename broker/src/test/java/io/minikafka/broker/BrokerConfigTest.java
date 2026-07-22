@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.minikafka.log.FsyncPolicy;
 import io.minikafka.log.LogConfig;
 import io.minikafka.protocol.ProtocolConfig;
+import io.minikafka.raft.RaftConfig;
 import java.util.HashMap;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -233,5 +234,49 @@ class BrokerConfigTest {
     assertEquals(250, config.heartbeatIntervalMs());
     assertEquals(1000, config.heartbeatTimeoutMs());
     assertEquals(100, config.peerReconnectBackoffMs());
+  }
+
+  @Test
+  void defaultsRaftTimingsWhenUnset() {
+    BrokerConfig config = BrokerConfig.fromEnv(baseEnv()::get);
+
+    assertEquals(RaftConfig.DEFAULT_MIN_ELECTION_TIMEOUT_MS, config.raftElectionTimeoutMinMs());
+    assertEquals(RaftConfig.DEFAULT_MAX_ELECTION_TIMEOUT_MS, config.raftElectionTimeoutMaxMs());
+    assertEquals(RaftConfig.DEFAULT_HEARTBEAT_INTERVAL_MS, config.raftHeartbeatIntervalMs());
+    assertEquals(RaftConfig.DEFAULT_RPC_TIMEOUT_MS, config.raftRpcTimeoutMs());
+    assertEquals(RaftConfig.DEFAULT_MAX_ENTRIES_PER_APPEND, config.raftMaxEntriesPerAppend());
+    assertEquals(5000, config.raftProposeTimeoutMs());
+    assertEquals(2000, config.raftLeaderWaitMs());
+  }
+
+  @Test
+  void parsesRaftTimingsWhenSet() {
+    Map<String, String> env = baseEnv();
+    env.put("RAFT_ELECTION_TIMEOUT_MIN_MS", "60");
+    env.put("RAFT_ELECTION_TIMEOUT_MAX_MS", "120");
+    env.put("RAFT_HEARTBEAT_INTERVAL_MS", "20");
+    env.put("RAFT_RPC_TIMEOUT_MS", "100");
+    env.put("RAFT_MAX_ENTRIES_PER_APPEND", "50");
+    env.put("RAFT_PROPOSE_TIMEOUT_MS", "1000");
+    env.put("RAFT_LEADER_WAIT_MS", "500");
+
+    BrokerConfig config = BrokerConfig.fromEnv(env::get);
+
+    assertEquals(60, config.raftElectionTimeoutMinMs());
+    assertEquals(120, config.raftElectionTimeoutMaxMs());
+    assertEquals(20, config.raftHeartbeatIntervalMs());
+    assertEquals(100, config.raftRpcTimeoutMs());
+    assertEquals(50, config.raftMaxEntriesPerAppend());
+    assertEquals(1000, config.raftProposeTimeoutMs());
+    assertEquals(500, config.raftLeaderWaitMs());
+  }
+
+  @Test
+  void raftStateDirForBuildsPerPartitionRaftDirectory() {
+    BrokerConfig config = BrokerConfig.fromEnv(baseEnv()::get);
+
+    java.nio.file.Path dir = config.raftStateDirFor(new TopicPartition("orders", 0));
+
+    assertEquals(java.nio.file.Path.of("/tmp/mini-kafka-test", "orders-0", "raft"), dir);
   }
 }

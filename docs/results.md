@@ -55,9 +55,9 @@
 | 02 | In-Memory Log + Thin Slice | done | 2026-07-21 |
 | 03 | Durable Append-Only Log | done | 2026-07-21 |
 | 04 | Partitions & Consumer Groups | done | 2026-07-21 |
-| 05 | Cluster Membership & Metadata | todo | — |
-| 06 | Raft Consensus Core | todo | — |
-| 07 | Replicated Partitions via Raft | todo | — |
+| 05 | Cluster Membership & Metadata | done | 2026-07-22 |
+| 06 | Raft Consensus Core | done | 2026-07-22 |
+| 07 | Replicated Partitions via Raft | done | 2026-07-22 |
 | 08 | Leader Failover & Epoch Fencing | todo | — |
 | 09 | Idempotent Producer | todo | — |
 | 10 | Backpressure & Flow Control | todo | — |

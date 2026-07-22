@@ -96,21 +96,43 @@ public final class MessageCodec {
         }
         case AppendEntriesReq m -> {
           out.writeLong(m.correlationId());
+          writeString(out, m.topic());
+          out.writeInt(m.partition());
           out.writeLong(m.term());
           out.writeInt(m.leaderId());
+          out.writeLong(m.prevLogIndex());
+          out.writeLong(m.prevLogTerm());
+          out.writeInt(m.entries().size());
+          for (AppendEntriesReq.Entry entry : m.entries()) {
+            out.writeLong(entry.term());
+            out.writeLong(entry.index());
+            writeBytes(out, entry.command());
+          }
+          out.writeLong(m.leaderCommit());
         }
         case AppendEntriesResp m -> {
           out.writeLong(m.correlationId());
+          writeString(out, m.topic());
+          out.writeInt(m.partition());
           out.writeLong(m.term());
           out.writeBoolean(m.success());
+          out.writeLong(m.conflictIndex());
+          out.writeLong(m.conflictTerm());
+          out.writeLong(m.followerLastIndex());
         }
         case RequestVoteReq m -> {
           out.writeLong(m.correlationId());
+          writeString(out, m.topic());
+          out.writeInt(m.partition());
           out.writeLong(m.term());
           out.writeInt(m.candidateId());
+          out.writeLong(m.lastLogIndex());
+          out.writeLong(m.lastLogTerm());
         }
         case RequestVoteResp m -> {
           out.writeLong(m.correlationId());
+          writeString(out, m.topic());
+          out.writeInt(m.partition());
           out.writeLong(m.term());
           out.writeBoolean(m.voteGranted());
         }
@@ -166,13 +188,29 @@ public final class MessageCodec {
             case FETCH_OFFSET_REQ ->
                 new FetchOffsetReq(in.readLong(), readString(in), readString(in), in.readInt());
             case FETCH_OFFSET_RESP -> new FetchOffsetResp(in.readLong(), in.readLong());
-            case APPEND_ENTRIES_REQ ->
-                new AppendEntriesReq(in.readLong(), in.readLong(), in.readInt());
+            case APPEND_ENTRIES_REQ -> decodeAppendEntriesReq(in);
             case APPEND_ENTRIES_RESP ->
-                new AppendEntriesResp(in.readLong(), in.readLong(), in.readBoolean());
-            case REQUEST_VOTE_REQ -> new RequestVoteReq(in.readLong(), in.readLong(), in.readInt());
+                new AppendEntriesResp(
+                    in.readLong(),
+                    readString(in),
+                    in.readInt(),
+                    in.readLong(),
+                    in.readBoolean(),
+                    in.readLong(),
+                    in.readLong(),
+                    in.readLong());
+            case REQUEST_VOTE_REQ ->
+                new RequestVoteReq(
+                    in.readLong(),
+                    readString(in),
+                    in.readInt(),
+                    in.readLong(),
+                    in.readInt(),
+                    in.readLong(),
+                    in.readLong());
             case REQUEST_VOTE_RESP ->
-                new RequestVoteResp(in.readLong(), in.readLong(), in.readBoolean());
+                new RequestVoteResp(
+                    in.readLong(), readString(in), in.readInt(), in.readLong(), in.readBoolean());
             case HEARTBEAT_REQ -> new HeartbeatReq(in.readLong(), in.readLong(), in.readInt());
             case HEARTBEAT_RESP -> new HeartbeatResp(in.readLong(), in.readLong());
             case ERROR_RESP -> new ErrorResp(in.readLong(), in.readInt(), readString(in));
@@ -231,6 +269,35 @@ public final class MessageCodec {
       topics.add(new TopicMetadata(topic, partitions));
     }
     return new MetadataResp(correlationId, brokers, topics);
+  }
+
+  private static AppendEntriesReq decodeAppendEntriesReq(DataInputStream in) throws IOException {
+    long correlationId = in.readLong();
+    String topic = readString(in);
+    int partition = in.readInt();
+    long term = in.readLong();
+    int leaderId = in.readInt();
+    long prevLogIndex = in.readLong();
+    long prevLogTerm = in.readLong();
+    int entryCount = in.readInt();
+    if (entryCount < 0) {
+      throw new ProtocolException("Negative entry count: " + entryCount);
+    }
+    List<AppendEntriesReq.Entry> entries = new ArrayList<>(Math.min(entryCount, 1024));
+    for (int i = 0; i < entryCount; i++) {
+      entries.add(new AppendEntriesReq.Entry(in.readLong(), in.readLong(), readBytes(in)));
+    }
+    long leaderCommit = in.readLong();
+    return new AppendEntriesReq(
+        correlationId,
+        topic,
+        partition,
+        term,
+        leaderId,
+        prevLogIndex,
+        prevLogTerm,
+        entries,
+        leaderCommit);
   }
 
   private static PollResp decodePollResp(DataInputStream in) throws IOException {

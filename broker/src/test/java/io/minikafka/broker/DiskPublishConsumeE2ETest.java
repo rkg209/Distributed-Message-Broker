@@ -7,7 +7,6 @@ import io.minikafka.client.BrokerConnection;
 import io.minikafka.client.ConsumerClient;
 import io.minikafka.client.ProducerClient;
 import io.minikafka.log.DiskPartitionLog;
-import io.minikafka.log.LogConfig;
 import io.minikafka.protocol.BrokerInfo;
 import io.minikafka.protocol.PollResp;
 import io.minikafka.protocol.ProtocolConfig;
@@ -33,19 +32,25 @@ class DiskPublishConsumeE2ETest {
   private static final int RECORD_COUNT = 1000;
 
   private ConnectionAcceptor acceptor;
-  private TopicRegistry topicRegistry;
+  private PartitionManager partitionManager;
   private ConsumerGroupManager consumerGroupManager;
 
   @BeforeEach
   void startBroker(@TempDir Path tempDir) throws IOException {
-    BrokerInfo self = new BrokerInfo(1, "localhost", 0);
-    MetadataService metadataService = new MetadataService(self, TopicConfig.parse(null, 1));
-    topicRegistry =
-        new TopicRegistry(
-            tp ->
-                new DiskPartitionLog(
-                    LogConfig.defaultsFor(tempDir.resolve(tp.topic() + "-" + tp.partition()))));
-    PartitionManager partitionManager = new PartitionManager(topicRegistry, metadataService);
+    BrokerConfig config =
+        TestBrokerConfig.singleBroker(
+            tempDir.resolve("logs"), tempDir.resolve("offsets"), TopicConfig.parse(null, 1));
+    BrokerInfo self = new BrokerInfo(config.brokerId(), config.brokerHost(), config.brokerPort());
+    MetadataService metadataService =
+        new MetadataService(self, config.topicConfig(), config.clusterConfig());
+    partitionManager =
+        new PartitionManager(
+            config,
+            metadataService,
+            config.clusterConfig(),
+            tp -> new DiskPartitionLog(config.logConfigFor(tp)));
+    metadataService.attachPartitionManager(partitionManager);
+    partitionManager.start();
     consumerGroupManager = new ConsumerGroupManager(tempDir.resolve("offsets"));
     BrokerRequestHandler handler =
         new BrokerRequestHandler(
@@ -57,7 +62,7 @@ class DiskPublishConsumeE2ETest {
   @AfterEach
   void stopBroker() {
     acceptor.close();
-    topicRegistry.close();
+    partitionManager.close();
     consumerGroupManager.close();
   }
 

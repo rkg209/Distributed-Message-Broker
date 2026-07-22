@@ -39,10 +39,21 @@ class MessageCodecTest {
                     List.of(
                         new PartitionMetadata(0, 1, List.of(1, 2, 3)),
                         new PartitionMetadata(1, 1, List.of()))))),
-        new AppendEntriesReq(9L, 5L, 1),
-        new AppendEntriesResp(10L, 5L, true),
-        new RequestVoteReq(11L, 6L, 2),
-        new RequestVoteResp(12L, 6L, false),
+        new AppendEntriesReq(
+            9L,
+            "orders",
+            3,
+            5L,
+            1,
+            10L,
+            4L,
+            List.of(
+                new AppendEntriesReq.Entry(5L, 11L, new byte[] {1, 2}),
+                new AppendEntriesReq.Entry(5L, 12L, new byte[0])),
+            10L),
+        new AppendEntriesResp(10L, "orders", 3, 5L, true, 0L, 0L, 12L),
+        new RequestVoteReq(11L, "orders", 3, 6L, 2, 12L, 5L),
+        new RequestVoteResp(12L, "orders", 3, 6L, false),
         new HeartbeatReq(13L, 7L, 1),
         new HeartbeatResp(14L, 7L),
         new ErrorResp(15L, ErrorResp.CODE_PROTOCOL_ERROR, "bad frame"),
@@ -96,6 +107,31 @@ class MessageCodecTest {
   @Test
   void pollRespWithEmptyBatchRoundTrips() throws ProtocolException {
     PollResp original = new PollResp(1L, List.of());
+    assertEquals(original, codec.decode(codec.encode(original)));
+  }
+
+  @Test
+  void appendEntriesHeartbeatWithEmptyEntriesRoundTrips() throws ProtocolException {
+    AppendEntriesReq original = new AppendEntriesReq(1L, "orders", 0, 3L, 1, 5L, 2L, List.of(), 5L);
+    assertEquals(original, codec.decode(codec.encode(original)));
+  }
+
+  @Test
+  void appendEntriesReqWithMultipleEntriesRoundTrips() throws ProtocolException {
+    AppendEntriesReq original =
+        new AppendEntriesReq(
+            1L,
+            "orders",
+            2,
+            3L,
+            1,
+            5L,
+            2L,
+            List.of(
+                new AppendEntriesReq.Entry(3L, 6L, new byte[] {1, 2, 3}),
+                new AppendEntriesReq.Entry(3L, 7L, new byte[] {4}),
+                new AppendEntriesReq.Entry(3L, 8L, new byte[0])),
+            6L);
     assertEquals(original, codec.decode(codec.encode(original)));
   }
 
