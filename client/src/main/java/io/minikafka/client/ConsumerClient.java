@@ -17,10 +17,18 @@ import java.util.List;
  * resumes from the group's last committed offset on construction and can durably commit its current
  * offset via {@link #commitOffset()}. Consumers are one per partition; multi-partition consumption
  * is a {@link StaticAssignor} list plus one {@link ConsumerClient} each.
+ *
+ * <p>Constructed over a {@link ClusterClient} instead of a single {@link BrokerConnection}, every
+ * RPC redirects to and retries against the current partition leader on {@code CODE_NOT_LEADER} or a
+ * broken socket. {@link #currentOffset} only ever advances on a successful {@link PollResp}, so a
+ * retry after redirect resumes from the same offset — no gap, no skip.
  */
 public final class ConsumerClient {
 
   private final BrokerConnection connection;
+  private final ClusterClient clusterClient;
+  private final int maxRetries;
+  private final long retryBackoffMs;
   private final String topic;
   private final int partition;
   private final String group;
@@ -29,6 +37,9 @@ public final class ConsumerClient {
   public ConsumerClient(
       BrokerConnection connection, String topic, int partition, long startOffset) {
     this.connection = connection;
+    this.clusterClient = null;
+    this.maxRetries = 0;
+    this.retryBackoffMs = 0;
     this.topic = topic;
     this.partition = partition;
     this.group = null;
@@ -42,6 +53,60 @@ public final class ConsumerClient {
   public ConsumerClient(BrokerConnection connection, String topic, int partition, String group)
       throws IOException {
     this.connection = connection;
+    this.clusterClient = null;
+    this.maxRetries = 0;
+    this.retryBackoffMs = 0;
+    this.topic = topic;
+    this.partition = partition;
+    this.group = group;
+    this.currentOffset = fetchCommittedOffset();
+  }
+
+  /**
+   * A redirect-aware, groupless consumer over {@code clusterClient} starting at {@code
+   * startOffset}.
+   */
+  public ConsumerClient(
+      ClusterClient clusterClient,
+      String topic,
+      int partition,
+      long startOffset,
+      int maxRetries,
+      long retryBackoffMs) {
+    this.connection = null;
+    this.clusterClient = clusterClient;
+    this.maxRetries = maxRetries;
+    this.retryBackoffMs = retryBackoffMs;
+    this.topic = topic;
+    this.partition = partition;
+    this.group = null;
+    this.currentOffset = startOffset;
+  }
+
+  /** A redirect-aware consumer over {@code clusterClient}, using default retry tunables. */
+  public ConsumerClient(ClusterClient clusterClient, String topic, int partition, String group)
+      throws IOException {
+    this(
+        clusterClient,
+        topic,
+        partition,
+        group,
+        ProducerClient.DEFAULT_MAX_RETRIES,
+        ProducerClient.DEFAULT_RETRY_BACKOFF_MS);
+  }
+
+  public ConsumerClient(
+      ClusterClient clusterClient,
+      String topic,
+      int partition,
+      String group,
+      int maxRetries,
+      long retryBackoffMs)
+      throws IOException {
+    this.connection = null;
+    this.clusterClient = clusterClient;
+    this.maxRetries = maxRetries;
+    this.retryBackoffMs = retryBackoffMs;
     this.topic = topic;
     this.partition = partition;
     this.group = group;
@@ -53,8 +118,11 @@ public final class ConsumerClient {
    * offset past the last record returned; an empty batch leaves the offset unchanged.
    */
   public List<PollResp.Record> poll() throws IOException {
-    PollReq req = new PollReq(connection.nextCorrelationId(), topic, partition, currentOffset);
-    Message response = connection.request(req);
+    Message response =
+        send(
+            conn ->
+                conn.request(
+                    new PollReq(conn.nextCorrelationId(), topic, partition, currentOffset)));
     return switch (response) {
       case PollResp resp -> {
         List<PollResp.Record> records = resp.records();
@@ -73,9 +141,12 @@ public final class ConsumerClient {
     if (group == null) {
       throw new IllegalStateException("commitOffset() requires a consumer group");
     }
-    CommitOffsetReq req =
-        new CommitOffsetReq(connection.nextCorrelationId(), group, topic, partition, currentOffset);
-    Message response = connection.request(req);
+    Message response =
+        send(
+            conn ->
+                conn.request(
+                    new CommitOffsetReq(
+                        conn.nextCorrelationId(), group, topic, partition, currentOffset)));
     switch (response) {
       case CommitOffsetResp resp -> {
         if (!resp.ok()) {
@@ -93,13 +164,23 @@ public final class ConsumerClient {
   }
 
   private long fetchCommittedOffset() throws IOException {
-    FetchOffsetReq req =
-        new FetchOffsetReq(connection.nextCorrelationId(), group, topic, partition);
-    Message response = connection.request(req);
+    Message response =
+        send(
+            conn ->
+                conn.request(
+                    new FetchOffsetReq(conn.nextCorrelationId(), group, topic, partition)));
     return switch (response) {
       case FetchOffsetResp resp -> resp.offset() == FetchOffsetResp.NO_OFFSET ? 0 : resp.offset();
       case ErrorResp err -> throw new ProtocolException("Fetch offset failed: " + err.message());
       default -> throw new ProtocolException("Unexpected response type: " + response.type());
     };
+  }
+
+  private Message send(RedirectingCall.Request request) throws IOException {
+    if (clusterClient != null) {
+      return new RedirectingCall(clusterClient, topic, partition, maxRetries, retryBackoffMs)
+          .send(request);
+    }
+    return request.send(connection);
   }
 }

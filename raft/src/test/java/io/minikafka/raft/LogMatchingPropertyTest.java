@@ -82,7 +82,7 @@ class LogMatchingPropertyTest {
   }
 
   private static RaftNode bareFollower(int id, RaftLogStore logStore, Path stateDir) {
-    RaftConfig config = new RaftConfig(100, 200, 20, 100, 150, stateDir);
+    RaftConfig config = new RaftConfig(100, 200, 20, 100, 150, stateDir, "group-" + id);
     PersistentState persistentState = PersistentState.load(stateDir);
     return new RaftNode(
         id,

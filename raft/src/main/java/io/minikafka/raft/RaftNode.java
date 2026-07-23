@@ -59,8 +59,13 @@ public final class RaftNode implements AutoCloseable {
   private boolean started = false;
   private volatile java.util.function.BiConsumer<Long, Integer> leaderListener;
 
-  /** Test hook: invoked with {@code (term, selfId)} whenever this node becomes leader. */
-  void setLeaderListener(java.util.function.BiConsumer<Long, Integer> listener) {
+  /**
+   * Invoked with {@code (term, leaderId)} whenever this node's view of the leader for its Raft
+   * group changes: on becoming leader ({@code leaderId == selfId}) and on stepping down from leader
+   * ({@code leaderId == PersistentState.NONE}). Lets callers such as {@code MetadataService} learn
+   * of leadership changes push-style instead of polling.
+   */
+  public void onLeadershipChange(java.util.function.BiConsumer<Long, Integer> listener) {
     this.leaderListener = listener;
   }
 
@@ -106,6 +111,18 @@ public final class RaftNode implements AutoCloseable {
         pipeline.close();
       }
       pipelines.clear();
+      // A closed node must never be mistaken for a live leader by a caller enumerating replicas
+      // (e.g. an in-process test harness that keeps this object around after "killing" it) — real
+      // Raft never observes this since a crashed process's role simply vanishes with it.
+      boolean wasLeader = role == RaftRole.LEADER;
+      role = RaftRole.FOLLOWER;
+      leaderId = PersistentState.NONE;
+      if (wasLeader) {
+        java.util.function.BiConsumer<Long, Integer> listener = leaderListener;
+        if (listener != null) {
+          listener.accept(persistentState.currentTerm(), PersistentState.NONE);
+        }
+      }
     } finally {
       lock.unlock();
     }
@@ -364,7 +381,8 @@ public final class RaftNode implements AutoCloseable {
     role = RaftRole.LEADER;
     leaderId = selfId;
     electionTimer.suppress();
-    log.info("Node {} became leader for term {}", selfId, persistentState.currentTerm());
+    log.info(
+        "Elected leader for partition={} term={}", config.groupId(), persistentState.currentTerm());
     java.util.function.BiConsumer<Long, Integer> listener = leaderListener;
     if (listener != null) {
       listener.accept(persistentState.currentTerm(), selfId);
@@ -398,19 +416,25 @@ public final class RaftNode implements AutoCloseable {
 
   /** Must be called with {@link #lock} held. Persists the term change and fails all proposals. */
   private void stepDownToFollower(long newTerm, int votedFor) {
-    persistentState.save(newTerm, votedFor);
-    if (role == RaftRole.LEADER) {
+    boolean wasLeader = role == RaftRole.LEADER;
+    long oldTerm = persistentState.currentTerm();
+    if (wasLeader) {
+      log.info("Stepping down partition={} term={}>{}", config.groupId(), newTerm, oldTerm);
       for (ReplicationPipeline pipeline : pipelines.values()) {
         pipeline.close();
       }
       pipelines.clear();
     }
-    boolean wasLeader = role == RaftRole.LEADER;
+    persistentState.save(newTerm, votedFor);
     role = RaftRole.FOLLOWER;
     leaderId = PersistentState.NONE;
     votesGranted.clear();
     if (wasLeader) {
       electionTimer.resume();
+      java.util.function.BiConsumer<Long, Integer> listener = leaderListener;
+      if (listener != null) {
+        listener.accept(newTerm, PersistentState.NONE);
+      }
     }
     failAllPending();
   }

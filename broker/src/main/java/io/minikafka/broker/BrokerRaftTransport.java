@@ -29,6 +29,15 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 final class BrokerRaftTransport implements RaftTransport, AutoCloseable {
 
+  /**
+   * Prefix {@link BrokerRequestHandler} embeds in a {@code CODE_STALE_LEADER_EPOCH} {@link
+   * ErrorResp}'s message, followed immediately by the responder's current term. Lets {@link
+   * #appendEntries} recover that term instead of discarding it, so a fenced leader still steps down
+   * via {@code RaftNode.replicateTo}'s normal {@code resp.term() > capturedTerm} check rather than
+   * only when the new leader's own RPC happens to reach it.
+   */
+  static final String STALE_EPOCH_PREFIX = "STALE_TERM:";
+
   private final TopicPartition tp;
   private final Map<Integer, PeerConnection> connections;
   private final ExecutorService vthreads;
@@ -71,6 +80,12 @@ final class BrokerRaftTransport implements RaftTransport, AutoCloseable {
                   request.leaderCommit());
           Message response = sendOrThrow(conn, req);
           if (response instanceof ErrorResp err) {
+            if (err.errorCode() == ErrorResp.CODE_STALE_LEADER_EPOCH) {
+              long observedTerm = parseStaleTerm(err.message());
+              if (observedTerm > 0) {
+                return new AppendEntriesResponse(observedTerm, false, 0, 0, 0);
+              }
+            }
             throw new RaftRpcException(
                 "AppendEntries to " + targetBrokerId + " rejected: " + err.message());
           }
@@ -109,6 +124,24 @@ final class BrokerRaftTransport implements RaftTransport, AutoCloseable {
           return new RequestVoteResponse(resp.term(), resp.voteGranted());
         },
         vthreads);
+  }
+
+  /** Recovers the term embedded after {@link #STALE_EPOCH_PREFIX}, or {@code 0} if unparseable. */
+  private static long parseStaleTerm(String message) {
+    int start = message.indexOf(STALE_EPOCH_PREFIX);
+    if (start < 0) {
+      return 0;
+    }
+    int termStart = start + STALE_EPOCH_PREFIX.length();
+    int termEnd = message.indexOf(':', termStart);
+    if (termEnd < 0) {
+      return 0;
+    }
+    try {
+      return Long.parseLong(message.substring(termStart, termEnd));
+    } catch (NumberFormatException e) {
+      return 0;
+    }
   }
 
   private Message sendOrThrow(PeerConnection conn, Message request) {

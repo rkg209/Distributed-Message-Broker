@@ -28,12 +28,16 @@ import io.minikafka.raft.RaftEntry;
 import io.minikafka.raft.RequestVoteRequest;
 import io.minikafka.raft.RequestVoteResponse;
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Real request handler backing the Spec 02–07 publish/poll/metadata/consumer-group/Raft slice.
  * Replaces {@link StubRequestHandler}.
  */
 public final class BrokerRequestHandler implements RequestHandler {
+
+  private static final Logger log = LoggerFactory.getLogger(BrokerRequestHandler.class);
 
   private final PartitionManager partitionManager;
   private final MetadataService metadataService;
@@ -124,6 +128,30 @@ public final class BrokerRequestHandler implements RequestHandler {
           req.correlationId(),
           ErrorResp.CODE_UNKNOWN_PARTITION,
           "This broker does not host partition " + tp);
+    }
+    long localTerm = replica.raftNode().currentTerm();
+    if (req.term() < localTerm) {
+      log.warn(
+          "Fencing stale leader request partition={} epoch={} currentEpoch={}",
+          tp,
+          req.term(),
+          localTerm);
+      // The message carries localTerm in BrokerRaftTransport.STALE_EPOCH_PREFIX-prefixed form so
+      // the fenced leader's own transport can still learn the higher term and step down through
+      // the normal Raft path (RaftNode.replicateTo's resp.term() > capturedTerm check) — an
+      // ErrorResp that merely threw the term away would leave a fenced leader stuck believing
+      // it's still leader until the new leader's own AppendEntries happened to reach it.
+      return new ErrorResp(
+          req.correlationId(),
+          ErrorResp.CODE_STALE_LEADER_EPOCH,
+          BrokerRaftTransport.STALE_EPOCH_PREFIX
+              + localTerm
+              + ": stale leader epoch "
+              + req.term()
+              + " < current epoch "
+              + localTerm
+              + " for "
+              + tp);
     }
     List<RaftEntry> entries =
         req.entries().stream().map(e -> new RaftEntry(e.term(), e.index(), e.command())).toList();

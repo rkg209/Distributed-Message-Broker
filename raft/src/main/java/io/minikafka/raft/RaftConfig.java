@@ -9,7 +9,8 @@ public record RaftConfig(
     long heartbeatIntervalMs,
     int maxEntriesPerAppend,
     long rpcTimeoutMs,
-    Path stateDir) {
+    Path stateDir,
+    String groupId) {
 
   public static final long DEFAULT_MIN_ELECTION_TIMEOUT_MS = 150;
   public static final long DEFAULT_MAX_ELECTION_TIMEOUT_MS = 300;
@@ -40,15 +41,23 @@ public record RaftConfig(
     if (stateDir == null) {
       throw new IllegalArgumentException("stateDir must not be null");
     }
+    if (groupId == null) {
+      throw new IllegalArgumentException("groupId must not be null");
+    }
   }
 
   public static RaftConfig defaultsFor(Path stateDir) {
+    return defaultsFor(stateDir, stateDir.toString());
+  }
+
+  public static RaftConfig defaultsFor(Path stateDir, String groupId) {
     return new RaftConfig(
         DEFAULT_MIN_ELECTION_TIMEOUT_MS,
         DEFAULT_MAX_ELECTION_TIMEOUT_MS,
         DEFAULT_HEARTBEAT_INTERVAL_MS,
         DEFAULT_MAX_ENTRIES_PER_APPEND,
         DEFAULT_RPC_TIMEOUT_MS,
-        stateDir);
+        stateDir,
+        groupId);
   }
 }

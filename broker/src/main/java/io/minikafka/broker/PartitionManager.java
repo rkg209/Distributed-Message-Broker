@@ -99,6 +99,12 @@ public final class PartitionManager implements AutoCloseable {
     return replicas.get(tp);
   }
 
+  /** This broker's current leader epoch (Raft term) for {@code tp}, or {@code 0} if unhosted. */
+  public long leaderEpochFor(TopicPartition tp) {
+    PartitionReplica replica = replicas.get(tp);
+    return replica == null ? 0 : replica.currentLeaderEpoch();
+  }
+
   private PartitionReplica replicaFor(TopicPartition tp) {
     return replicas.computeIfAbsent(tp, this::createReplica);
   }
@@ -139,6 +145,7 @@ public final class PartitionManager implements AutoCloseable {
             raftLogStore,
             partitionLog,
             transport,
+            metadataService,
             config.raftProposeTimeoutMs(),
             config.raftLeaderWaitMs());
     RaftNode raftNode =

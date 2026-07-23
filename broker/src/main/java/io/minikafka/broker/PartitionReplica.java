@@ -31,6 +31,7 @@ final class PartitionReplica implements StateMachine, AutoCloseable {
   private final FileRaftLogStore raftLogStore;
   private final PartitionLog partitionLog;
   private final BrokerRaftTransport transport;
+  private final MetadataService metadataService;
   private final long proposeTimeoutMs;
   private final long leaderWaitMs;
 
@@ -54,20 +55,32 @@ final class PartitionReplica implements StateMachine, AutoCloseable {
       FileRaftLogStore raftLogStore,
       PartitionLog partitionLog,
       BrokerRaftTransport transport,
+      MetadataService metadataService,
       long proposeTimeoutMs,
       long leaderWaitMs) {
     this.tp = tp;
     this.raftLogStore = raftLogStore;
     this.partitionLog = partitionLog;
     this.transport = transport;
+    this.metadataService = metadataService;
     this.proposeTimeoutMs = proposeTimeoutMs;
     this.leaderWaitMs = leaderWaitMs;
     this.skipRemaining = new AtomicLong(partitionLog.nextOffset());
   }
 
-  /** Completes construction once the {@link RaftNode} wrapping this state machine exists. */
+  /**
+   * Completes construction once the {@link RaftNode} wrapping this state machine exists, and
+   * subscribes {@link MetadataService} to push-style leadership-change notifications.
+   */
   void attachRaftNode(RaftNode raftNode) {
     this.raftNode = raftNode;
+    raftNode.onLeadershipChange(
+        (term, leaderId) -> metadataService.onLeadershipChange(tp, leaderId, term));
+  }
+
+  /** This replica's current leader epoch — the Raft term, with no separate counter. */
+  long currentLeaderEpoch() {
+    return raftNode.currentTerm();
   }
 
   @Override

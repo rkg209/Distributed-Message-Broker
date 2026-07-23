@@ -224,7 +224,8 @@ public record BrokerConfig(
         raftHeartbeatIntervalMs,
         raftMaxEntriesPerAppend,
         raftRpcTimeoutMs,
-        raftStateDirFor(tp));
+        raftStateDirFor(tp),
+        tp.toString());
   }
 
   private static String optionalString(

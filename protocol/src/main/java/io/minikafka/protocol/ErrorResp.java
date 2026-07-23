@@ -25,6 +25,12 @@ public record ErrorResp(long correlationId, int errorCode, String message) imple
   /** This broker is not the Raft leader for the requested partition. */
   public static final int CODE_NOT_LEADER = 5;
 
+  /**
+   * The requesting broker's leader epoch (Raft term) is below this replica's current term — it is a
+   * deposed leader and is fenced.
+   */
+  public static final int CODE_STALE_LEADER_EPOCH = 6;
+
   public ErrorResp {
     if (message == null) {
       throw new IllegalArgumentException("message must not be null");

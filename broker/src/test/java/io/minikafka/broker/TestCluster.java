@@ -5,6 +5,7 @@ import io.minikafka.log.LogConfig;
 import io.minikafka.log.PartitionLog;
 import io.minikafka.protocol.BrokerInfo;
 import io.minikafka.protocol.ProtocolConfig;
+import io.minikafka.raft.RaftRole;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.nio.file.Path;
@@ -38,8 +39,34 @@ final class TestCluster implements AutoCloseable {
   private final List<BrokerNode> nodes;
   private final java.util.Set<Integer> killed = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
-  private TestCluster(List<BrokerNode> nodes) {
+  private final String brokerListSpec;
+  private final String partitionAssignments;
+  private final int replicationFactor;
+  private final TopicConfig topicConfig;
+  private final long heartbeatIntervalMs;
+  private final long heartbeatTimeoutMs;
+  private final long peerReconnectBackoffMs;
+  private final Path tempDir;
+
+  private TestCluster(
+      List<BrokerNode> nodes,
+      String brokerListSpec,
+      String partitionAssignments,
+      int replicationFactor,
+      TopicConfig topicConfig,
+      long heartbeatIntervalMs,
+      long heartbeatTimeoutMs,
+      long peerReconnectBackoffMs,
+      Path tempDir) {
     this.nodes = nodes;
+    this.brokerListSpec = brokerListSpec;
+    this.partitionAssignments = partitionAssignments;
+    this.replicationFactor = replicationFactor;
+    this.topicConfig = topicConfig;
+    this.heartbeatIntervalMs = heartbeatIntervalMs;
+    this.heartbeatTimeoutMs = heartbeatTimeoutMs;
+    this.peerReconnectBackoffMs = peerReconnectBackoffMs;
+    this.tempDir = tempDir;
   }
 
   static TestCluster start(
@@ -60,59 +87,86 @@ final class TestCluster implements AutoCloseable {
 
     List<BrokerNode> nodes = new ArrayList<>(brokerCount);
     for (BrokerInfo self : brokers) {
-      ClusterConfig clusterConfig =
-          ClusterConfig.parse(
+      nodes.add(
+          startNode(
+              self,
               brokerListSpec,
               partitionAssignments,
               replicationFactor,
-              null,
-              self.brokerId(),
-              topicConfig);
-      MetadataService metadataService = new MetadataService(self, topicConfig, clusterConfig);
-      Path brokerDir = tempDir.resolve("broker-" + self.brokerId());
-      BrokerConfig brokerConfig =
-          testBrokerConfig(
-              self,
-              brokerDir,
-              clusterConfig,
               topicConfig,
               heartbeatIntervalMs,
               heartbeatTimeoutMs,
-              peerReconnectBackoffMs);
-      PartitionManager partitionManager =
-          new PartitionManager(
-              brokerConfig,
-              metadataService,
-              clusterConfig,
-              tp -> new DiskPartitionLog(brokerConfig.logConfigFor(tp)));
-      metadataService.attachPartitionManager(partitionManager);
-      ConsumerGroupManager consumerGroupManager =
-          new ConsumerGroupManager(brokerDir.resolve("offsets"));
-      BrokerRequestHandler handler =
-          new BrokerRequestHandler(
-              metadataService, partitionManager, consumerGroupManager, 1024 * 1024);
-      ConnectionAcceptor acceptor =
-          new ConnectionAcceptor(self.port(), ProtocolConfig.DEFAULT_MAX_FRAME_BYTES, handler);
-      acceptor.start();
-      HeartbeatMonitor heartbeatMonitor =
-          new HeartbeatMonitor(
-              self,
-              clusterConfig.peersOf(self.brokerId()),
-              heartbeatIntervalMs,
-              heartbeatTimeoutMs,
-              peerReconnectBackoffMs);
-      heartbeatMonitor.start();
-      partitionManager.start();
-      nodes.add(
-          new BrokerNode(
-              self,
-              acceptor,
-              metadataService,
-              heartbeatMonitor,
-              partitionManager,
-              consumerGroupManager));
+              peerReconnectBackoffMs,
+              tempDir));
     }
-    return new TestCluster(nodes);
+    return new TestCluster(
+        nodes,
+        brokerListSpec,
+        partitionAssignments,
+        replicationFactor,
+        topicConfig,
+        heartbeatIntervalMs,
+        heartbeatTimeoutMs,
+        peerReconnectBackoffMs,
+        tempDir);
+  }
+
+  private static BrokerNode startNode(
+      BrokerInfo self,
+      String brokerListSpec,
+      String partitionAssignments,
+      int replicationFactor,
+      TopicConfig topicConfig,
+      long heartbeatIntervalMs,
+      long heartbeatTimeoutMs,
+      long peerReconnectBackoffMs,
+      Path tempDir)
+      throws IOException {
+    ClusterConfig clusterConfig =
+        ClusterConfig.parse(
+            brokerListSpec,
+            partitionAssignments,
+            replicationFactor,
+            null,
+            self.brokerId(),
+            topicConfig);
+    MetadataService metadataService = new MetadataService(self, topicConfig, clusterConfig);
+    Path brokerDir = tempDir.resolve("broker-" + self.brokerId());
+    BrokerConfig brokerConfig =
+        testBrokerConfig(
+            self,
+            brokerDir,
+            clusterConfig,
+            topicConfig,
+            heartbeatIntervalMs,
+            heartbeatTimeoutMs,
+            peerReconnectBackoffMs);
+    PartitionManager partitionManager =
+        new PartitionManager(
+            brokerConfig,
+            metadataService,
+            clusterConfig,
+            tp -> new DiskPartitionLog(brokerConfig.logConfigFor(tp)));
+    metadataService.attachPartitionManager(partitionManager);
+    ConsumerGroupManager consumerGroupManager =
+        new ConsumerGroupManager(brokerDir.resolve("offsets"));
+    BrokerRequestHandler handler =
+        new BrokerRequestHandler(
+            metadataService, partitionManager, consumerGroupManager, 1024 * 1024);
+    ConnectionAcceptor acceptor =
+        new ConnectionAcceptor(self.port(), ProtocolConfig.DEFAULT_MAX_FRAME_BYTES, handler);
+    acceptor.start();
+    HeartbeatMonitor heartbeatMonitor =
+        new HeartbeatMonitor(
+            self,
+            clusterConfig.peersOf(self.brokerId()),
+            heartbeatIntervalMs,
+            heartbeatTimeoutMs,
+            peerReconnectBackoffMs);
+    heartbeatMonitor.start();
+    partitionManager.start();
+    return new BrokerNode(
+        self, acceptor, metadataService, heartbeatMonitor, partitionManager, consumerGroupManager);
   }
 
   private static BrokerConfig testBrokerConfig(
@@ -193,6 +247,17 @@ final class TestCluster implements AutoCloseable {
     return -1;
   }
 
+  /** {@code brokerId}'s current leader epoch (Raft term) for {@code tp}. */
+  long leaderEpochOf(int brokerId, TopicPartition tp) {
+    return node(brokerId).partitionManager().leaderEpochFor(tp);
+  }
+
+  /** {@code brokerId}'s current {@link RaftRole} for {@code tp}, or {@code null} if unhosted. */
+  RaftRole roleOf(int brokerId, TopicPartition tp) {
+    PartitionReplica replica = node(brokerId).partitionManager().replica(tp);
+    return replica == null ? null : replica.raftNode().role();
+  }
+
   /**
    * Stops just this broker's acceptor (simulating a crash) without closing its heartbeat monitor.
    */
@@ -239,6 +304,32 @@ final class TestCluster implements AutoCloseable {
             node.heartbeatMonitor(),
             node.partitionManager(),
             node.consumerGroupManager()));
+  }
+
+  /**
+   * Fully restarts a previously {@link #killBroker}ed node: rebuilds its {@link PartitionManager}
+   * (and every {@link PartitionReplica}) against the same on-disk {@code broker-{id}} directory, so
+   * {@code FileRaftLogStore.open} and {@code PersistentState.load} recover the killed broker's Raft
+   * term/log from disk, plus a fresh acceptor and heartbeat monitor. Removes {@code brokerId} from
+   * the killed set.
+   */
+  void restartBroker(int brokerId) throws IOException {
+    BrokerNode node = node(brokerId);
+    node.consumerGroupManager().close();
+    BrokerNode restarted =
+        startNode(
+            node.info(),
+            brokerListSpec,
+            partitionAssignments,
+            replicationFactor,
+            topicConfig,
+            heartbeatIntervalMs,
+            heartbeatTimeoutMs,
+            peerReconnectBackoffMs,
+            tempDir);
+    int index = nodes.indexOf(node);
+    nodes.set(index, restarted);
+    killed.remove(brokerId);
   }
 
   @Override

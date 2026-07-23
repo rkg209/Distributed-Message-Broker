@@ -22,7 +22,7 @@ import java.util.stream.Collectors;
 final class TestRaftCluster implements AutoCloseable {
 
   static final RaftConfig FAST_CONFIG_TEMPLATE =
-      new RaftConfig(300, 600, 50, 100, 300, Path.of("."));
+      new RaftConfig(300, 600, 50, 100, 300, Path.of("."), "test");
 
   private final MockTransport transport;
   private final Map<Integer, RaftNode> nodes = new ConcurrentHashMap<>();
@@ -71,7 +71,8 @@ final class TestRaftCluster implements AutoCloseable {
             FAST_CONFIG_TEMPLATE.heartbeatIntervalMs(),
             FAST_CONFIG_TEMPLATE.maxEntriesPerAppend(),
             FAST_CONFIG_TEMPLATE.rpcTimeoutMs(),
-            dir);
+            dir,
+            "group-" + id);
     PersistentState persistentState = PersistentState.load(dir);
     RaftNode node =
         new RaftNode(
@@ -83,7 +84,7 @@ final class TestRaftCluster implements AutoCloseable {
             transport,
             stateMachine,
             System::nanoTime);
-    node.setLeaderListener(
+    node.onLeadershipChange(
         (term, nodeId) ->
             leadersByTerm.computeIfAbsent(term, t -> new CopyOnWriteArraySet<>()).add(nodeId));
     transport.register(id, node);

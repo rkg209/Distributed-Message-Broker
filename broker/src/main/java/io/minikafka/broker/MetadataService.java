@@ -5,7 +5,9 @@ import io.minikafka.protocol.PartitionMetadata;
 import io.minikafka.protocol.TopicMetadata;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListSet;
 
 /**
@@ -21,6 +23,7 @@ public final class MetadataService {
   private final TopicConfig topicConfig;
   private final ClusterConfig clusterConfig;
   private final Set<String> knownTopics = new ConcurrentSkipListSet<>();
+  private final Map<TopicPartition, Integer> liveLeaders = new ConcurrentHashMap<>();
 
   // Set once via attachPartitionManager: PartitionManager's constructor takes a MetadataService,
   // so the two objects have a construction-order cycle that a constructor parameter can't express.
@@ -50,6 +53,20 @@ public final class MetadataService {
   /** Records that {@code topic} has been touched by a publish/poll, so it appears in metadata. */
   public void markTouched(String topic) {
     knownTopics.add(topic);
+  }
+
+  /**
+   * Records a Raft leadership change for {@code tp} pushed from a locally hosted {@link
+   * PartitionReplica}, so {@link #describePartition} reflects the new leader immediately rather
+   * than on next poll. {@code leaderId == PersistentState.NONE} (a step-down) clears the entry,
+   * falling back to the existing replica/assignment/self chain.
+   */
+  public void onLeadershipChange(TopicPartition tp, int leaderId, long epoch) {
+    if (leaderId == io.minikafka.raft.PersistentState.NONE) {
+      liveLeaders.remove(tp);
+    } else {
+      liveLeaders.put(tp, leaderId);
+    }
   }
 
   /** This broker's identity. */
@@ -91,6 +108,11 @@ public final class MetadataService {
         assignment
             .map(ClusterConfig.PartitionAssignment::replicaIds)
             .orElse(List.of(self.brokerId()));
+
+    Integer pushedLeader = liveLeaders.get(tp);
+    if (pushedLeader != null) {
+      return new PartitionMetadata(p, pushedLeader, replicaIds);
+    }
 
     PartitionManager pm = partitionManager;
     if (pm != null) {
