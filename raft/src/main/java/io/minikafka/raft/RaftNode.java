@@ -170,6 +170,16 @@ public final class RaftNode implements AutoCloseable {
     }
   }
 
+  /** Number of proposals awaiting commit — an observability hook for backpressure tests. */
+  public int pendingProposalCount() {
+    lock.lock();
+    try {
+      return pendingProposals.size();
+    } finally {
+      lock.unlock();
+    }
+  }
+
   public int selfId() {
     return selfId;
   }

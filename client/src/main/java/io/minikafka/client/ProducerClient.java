@@ -31,12 +31,22 @@ public final class ProducerClient {
   /** Default backoff between a redirect and its retry. */
   public static final long DEFAULT_RETRY_BACKOFF_MS = 100;
 
+  /** Default base delay (before jitter) for {@code BROKER_BUSY} backoff. */
+  public static final long DEFAULT_BACKOFF_BASE_MS = 50;
+
+  /** Default cap on {@code BROKER_BUSY} backoff delay. */
+  public static final long DEFAULT_BACKOFF_MAX_MS = 1000;
+
+  /** Default bound on {@code BROKER_BUSY} retries before a publish gives up and throws. */
+  public static final int DEFAULT_MAX_BUSY_RETRIES = 10;
+
   private final BrokerConnection connection;
   private final MetadataClient metadataClient;
   private final ClusterClient clusterClient;
   private final PartitionRouter router;
   private final int maxRetries;
   private final long retryBackoffMs;
+  private final BusyRetry busyRetry;
   private final long producerId;
   private final Map<TopicPartitionKey, Long> nextSeq = new ConcurrentHashMap<>();
 
@@ -48,12 +58,30 @@ public final class ProducerClient {
 
   public ProducerClient(
       BrokerConnection connection, MetadataClient metadataClient, PartitionRouter router) {
+    this(
+        connection,
+        metadataClient,
+        router,
+        DEFAULT_MAX_BUSY_RETRIES,
+        DEFAULT_BACKOFF_BASE_MS,
+        DEFAULT_BACKOFF_MAX_MS);
+  }
+
+  /** Full control over busy-retry tunables for the single-{@link BrokerConnection} mode. */
+  public ProducerClient(
+      BrokerConnection connection,
+      MetadataClient metadataClient,
+      PartitionRouter router,
+      int maxBusyRetries,
+      long backoffBaseMs,
+      long backoffMaxMs) {
     this.connection = connection;
     this.metadataClient = metadataClient;
     this.clusterClient = null;
     this.router = router;
     this.maxRetries = 0;
     this.retryBackoffMs = 0;
+    this.busyRetry = new BusyRetry(maxBusyRetries, backoffBaseMs, backoffMaxMs);
     this.producerId = newProducerId();
   }
 
@@ -64,23 +92,47 @@ public final class ProducerClient {
 
   public ProducerClient(
       ClusterClient clusterClient, PartitionRouter router, int maxRetries, long retryBackoffMs) {
+    this(
+        clusterClient,
+        router,
+        maxRetries,
+        retryBackoffMs,
+        DEFAULT_MAX_BUSY_RETRIES,
+        DEFAULT_BACKOFF_BASE_MS,
+        DEFAULT_BACKOFF_MAX_MS,
+        newProducerId());
+  }
+
+  /** Pins {@code producerId} instead of generating one — for tests that need a stable id. */
+  public ProducerClient(ClusterClient clusterClient, long producerId) {
+    this(
+        clusterClient,
+        new PartitionRouter(),
+        DEFAULT_MAX_RETRIES,
+        DEFAULT_RETRY_BACKOFF_MS,
+        DEFAULT_MAX_BUSY_RETRIES,
+        DEFAULT_BACKOFF_BASE_MS,
+        DEFAULT_BACKOFF_MAX_MS,
+        producerId);
+  }
+
+  /** Full control over both redirect and busy-retry tunables — for backpressure tests. */
+  public ProducerClient(
+      ClusterClient clusterClient,
+      PartitionRouter router,
+      int maxRetries,
+      long retryBackoffMs,
+      int maxBusyRetries,
+      long backoffBaseMs,
+      long backoffMaxMs,
+      long producerId) {
     this.connection = null;
     this.metadataClient = null;
     this.clusterClient = clusterClient;
     this.router = router;
     this.maxRetries = maxRetries;
     this.retryBackoffMs = retryBackoffMs;
-    this.producerId = newProducerId();
-  }
-
-  /** Pins {@code producerId} instead of generating one — for tests that need a stable id. */
-  public ProducerClient(ClusterClient clusterClient, long producerId) {
-    this.connection = null;
-    this.metadataClient = null;
-    this.clusterClient = clusterClient;
-    this.router = new PartitionRouter();
-    this.maxRetries = DEFAULT_MAX_RETRIES;
-    this.retryBackoffMs = DEFAULT_RETRY_BACKOFF_MS;
+    this.busyRetry = new BusyRetry(maxBusyRetries, backoffBaseMs, backoffMaxMs);
     this.producerId = producerId;
   }
 
@@ -142,6 +194,8 @@ public final class ProducerClient {
       case PublishResp resp -> resp.offset();
       case ErrorResp err when err.errorCode() == ErrorResp.CODE_SEQUENCE_GAP ->
           throw new SequenceGapException("Publish failed: " + err.message());
+      case ErrorResp err when err.errorCode() == ErrorResp.CODE_BROKER_BUSY ->
+          throw new BrokerBusyException("Publish failed: " + err.message());
       case ErrorResp err -> throw new ProtocolException("Publish failed: " + err.message());
       default -> throw new ProtocolException("Unexpected response type: " + response.type());
     };
@@ -162,6 +216,11 @@ public final class ProducerClient {
   }
 
   private Message send(String topic, int partition, RedirectingCall.Request request)
+      throws IOException {
+    return busyRetry.send(() -> sendOnce(topic, partition, request));
+  }
+
+  private Message sendOnce(String topic, int partition, RedirectingCall.Request request)
       throws IOException {
     if (clusterClient != null) {
       return new RedirectingCall(clusterClient, topic, partition, maxRetries, retryBackoffMs)

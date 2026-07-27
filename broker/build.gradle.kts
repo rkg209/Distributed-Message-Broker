@@ -46,3 +46,14 @@ val integrationTest = tasks.register<Test>("integrationTest") {
     useJUnitPlatform()
     shouldRunAfter(tasks.test)
 }
+
+val soakTest = tasks.register<Test>("soakTest") {
+    description = "Runs the long-running backpressure heap soak (AC-1 literal); excluded from `test`."
+    group = "verification"
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    useJUnitPlatform {
+        includeTags("soak")
+    }
+    shouldRunAfter(tasks.test)
+}

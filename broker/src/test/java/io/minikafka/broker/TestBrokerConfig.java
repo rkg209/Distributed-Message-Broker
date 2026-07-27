@@ -17,6 +17,20 @@ final class TestBrokerConfig {
   private TestBrokerConfig() {}
 
   static BrokerConfig singleBroker(Path logDir, Path offsetDir, TopicConfig topicConfig) {
+    return singleBroker(logDir, offsetDir, topicConfig, 1000, 100);
+  }
+
+  static BrokerConfig singleBroker(
+      Path logDir, Path offsetDir, TopicConfig topicConfig, int publishQueueCapacity) {
+    return singleBroker(logDir, offsetDir, topicConfig, publishQueueCapacity, 100);
+  }
+
+  static BrokerConfig singleBroker(
+      Path logDir,
+      Path offsetDir,
+      TopicConfig topicConfig,
+      int publishQueueCapacity,
+      long publishAcquireTimeoutMs) {
     BrokerInfo self = new BrokerInfo(1, "localhost", 0);
     return new BrokerConfig(
         self.brokerId(),
@@ -43,6 +57,8 @@ final class TestBrokerConfig {
         200,
         RaftConfig.DEFAULT_MAX_ENTRIES_PER_APPEND,
         5000,
-        3000);
+        3000,
+        publishQueueCapacity,
+        publishAcquireTimeoutMs);
   }
 }

@@ -15,6 +15,8 @@ x-broker-common: &broker-common
     PARTITION_ASSIGNMENTS: "orders:0=1,2,3;orders:1=2,3,1;orders:2=3,1,2"
     BROKER_HEARTBEAT_INTERVAL_MS: "250"
     BROKER_HEARTBEAT_TIMEOUT_MS: "1000"
+    BROKER_PUBLISH_QUEUE_CAPACITY: "1000"
+    BROKER_PUBLISH_ACQUIRE_TIMEOUT_MS: "100"
 
 services:
   broker-1:

@@ -37,6 +37,12 @@ public record ErrorResp(long correlationId, int errorCode, String message) imple
    */
   public static final int CODE_SEQUENCE_GAP = 7;
 
+  /**
+   * The broker's per-partition publish admission gate is saturated; the message was <b>not</b>
+   * appended. The producer should back off and retry.
+   */
+  public static final int CODE_BROKER_BUSY = 8;
+
   public ErrorResp {
     if (message == null) {
       throw new IllegalArgumentException("message must not be null");

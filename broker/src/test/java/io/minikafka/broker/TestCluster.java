@@ -27,6 +27,8 @@ final class TestCluster implements AutoCloseable {
   static final long DEFAULT_RAFT_RPC_TIMEOUT_MS = 300;
   static final long DEFAULT_RAFT_PROPOSE_TIMEOUT_MS = 5000;
   static final long DEFAULT_RAFT_LEADER_WAIT_MS = 3000;
+  static final int DEFAULT_PUBLISH_QUEUE_CAPACITY = 1000;
+  static final long DEFAULT_PUBLISH_ACQUIRE_TIMEOUT_MS = 100;
 
   record BrokerNode(
       BrokerInfo info,
@@ -46,6 +48,8 @@ final class TestCluster implements AutoCloseable {
   private final long heartbeatIntervalMs;
   private final long heartbeatTimeoutMs;
   private final long peerReconnectBackoffMs;
+  private final int publishQueueCapacity;
+  private final long publishAcquireTimeoutMs;
   private final Path tempDir;
 
   private TestCluster(
@@ -57,6 +61,8 @@ final class TestCluster implements AutoCloseable {
       long heartbeatIntervalMs,
       long heartbeatTimeoutMs,
       long peerReconnectBackoffMs,
+      int publishQueueCapacity,
+      long publishAcquireTimeoutMs,
       Path tempDir) {
     this.nodes = nodes;
     this.brokerListSpec = brokerListSpec;
@@ -66,6 +72,8 @@ final class TestCluster implements AutoCloseable {
     this.heartbeatIntervalMs = heartbeatIntervalMs;
     this.heartbeatTimeoutMs = heartbeatTimeoutMs;
     this.peerReconnectBackoffMs = peerReconnectBackoffMs;
+    this.publishQueueCapacity = publishQueueCapacity;
+    this.publishAcquireTimeoutMs = publishAcquireTimeoutMs;
     this.tempDir = tempDir;
   }
 
@@ -77,6 +85,32 @@ final class TestCluster implements AutoCloseable {
       long heartbeatIntervalMs,
       long heartbeatTimeoutMs,
       long peerReconnectBackoffMs,
+      Path tempDir)
+      throws IOException {
+    return start(
+        brokerCount,
+        partitionAssignments,
+        replicationFactor,
+        topicConfig,
+        heartbeatIntervalMs,
+        heartbeatTimeoutMs,
+        peerReconnectBackoffMs,
+        DEFAULT_PUBLISH_QUEUE_CAPACITY,
+        DEFAULT_PUBLISH_ACQUIRE_TIMEOUT_MS,
+        tempDir);
+  }
+
+  /** Overload letting backpressure tests build a cluster with a small publish queue capacity. */
+  static TestCluster start(
+      int brokerCount,
+      String partitionAssignments,
+      int replicationFactor,
+      TopicConfig topicConfig,
+      long heartbeatIntervalMs,
+      long heartbeatTimeoutMs,
+      long peerReconnectBackoffMs,
+      int publishQueueCapacity,
+      long publishAcquireTimeoutMs,
       Path tempDir)
       throws IOException {
     List<BrokerInfo> brokers = reservePorts(brokerCount);
@@ -97,6 +131,8 @@ final class TestCluster implements AutoCloseable {
               heartbeatIntervalMs,
               heartbeatTimeoutMs,
               peerReconnectBackoffMs,
+              publishQueueCapacity,
+              publishAcquireTimeoutMs,
               tempDir));
     }
     return new TestCluster(
@@ -108,6 +144,8 @@ final class TestCluster implements AutoCloseable {
         heartbeatIntervalMs,
         heartbeatTimeoutMs,
         peerReconnectBackoffMs,
+        publishQueueCapacity,
+        publishAcquireTimeoutMs,
         tempDir);
   }
 
@@ -120,6 +158,8 @@ final class TestCluster implements AutoCloseable {
       long heartbeatIntervalMs,
       long heartbeatTimeoutMs,
       long peerReconnectBackoffMs,
+      int publishQueueCapacity,
+      long publishAcquireTimeoutMs,
       Path tempDir)
       throws IOException {
     ClusterConfig clusterConfig =
@@ -140,7 +180,9 @@ final class TestCluster implements AutoCloseable {
             topicConfig,
             heartbeatIntervalMs,
             heartbeatTimeoutMs,
-            peerReconnectBackoffMs);
+            peerReconnectBackoffMs,
+            publishQueueCapacity,
+            publishAcquireTimeoutMs);
     PartitionManager partitionManager =
         new PartitionManager(
             brokerConfig,
@@ -176,7 +218,9 @@ final class TestCluster implements AutoCloseable {
       TopicConfig topicConfig,
       long heartbeatIntervalMs,
       long heartbeatTimeoutMs,
-      long peerReconnectBackoffMs) {
+      long peerReconnectBackoffMs,
+      int publishQueueCapacity,
+      long publishAcquireTimeoutMs) {
     return new BrokerConfig(
         self.brokerId(),
         self.host(),
@@ -202,7 +246,9 @@ final class TestCluster implements AutoCloseable {
         DEFAULT_RAFT_RPC_TIMEOUT_MS,
         io.minikafka.raft.RaftConfig.DEFAULT_MAX_ENTRIES_PER_APPEND,
         DEFAULT_RAFT_PROPOSE_TIMEOUT_MS,
-        DEFAULT_RAFT_LEADER_WAIT_MS);
+        DEFAULT_RAFT_LEADER_WAIT_MS,
+        publishQueueCapacity,
+        publishAcquireTimeoutMs);
   }
 
   private static List<BrokerInfo> reservePorts(int brokerCount) throws IOException {
@@ -326,6 +372,8 @@ final class TestCluster implements AutoCloseable {
             heartbeatIntervalMs,
             heartbeatTimeoutMs,
             peerReconnectBackoffMs,
+            publishQueueCapacity,
+            publishAcquireTimeoutMs,
             tempDir);
     int index = nodes.indexOf(node);
     nodes.set(index, restarted);

@@ -38,6 +38,22 @@
 
 ---
 
+## Backpressure Heap Soak (Spec 10, single broker, no consumer)
+
+| Run | Date | Duration | Publish Queue Capacity | Producer Threads | First-half Max Used Heap | Second-half Max Used Heap | Result |
+|-----|------|----------|------------------------|-------------------|--------------------------|----------------------------|--------|
+| 1 | 2026-07-27 | 60s | 1000 | 32 | 7 MB | 7 MB | PASS |
+
+Ran via `./gradlew :broker:soakTest` (`HeapSoakTest`, `@Tag("soak")`, excluded from `./gradlew test`).
+32 virtual-thread producers publish as fast as possible with no consumer draining the partition;
+used heap is sampled every 2s after a forced GC. Flat heap across the second half of the run
+confirms the per-partition admission gate (`BackpressureController`, default capacity 1000) keeps
+`RaftNode.pendingProposals` bounded rather than growing unboundedly with producer throughput
+(NFR-10). `BoundedInFlightTest` is the fast, deterministic proxy for this same guarantee and runs
+as part of `./gradlew test`.
+
+---
+
 ## Network Partition Tests
 
 | Run | Date | Partitions Injected | Split-brain Events | Result |
@@ -60,7 +76,7 @@
 | 07 | Replicated Partitions via Raft | done | 2026-07-22 |
 | 08 | Leader Failover & Epoch Fencing | done | 2026-07-27 |
 | 09 | Idempotent Producer | done | 2026-07-27 |
-| 10 | Backpressure & Flow Control | todo | — |
+| 10 | Backpressure & Flow Control | done | 2026-07-27 |
 | 11 | Chaos Harness & Linearizability | todo | — |
 | 12 | Benchmarks | todo | — |
 | 13 | Dynamic Rebalancing (STRETCH) | stretch | — |

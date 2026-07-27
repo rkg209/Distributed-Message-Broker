@@ -37,7 +37,9 @@ public record BrokerConfig(
     long raftRpcTimeoutMs,
     int raftMaxEntriesPerAppend,
     long raftProposeTimeoutMs,
-    long raftLeaderWaitMs) {
+    long raftLeaderWaitMs,
+    int publishQueueCapacity,
+    long publishAcquireTimeoutMs) {
 
   private static final String BROKER_ID = "BROKER_ID";
   private static final String BROKER_HOST = "BROKER_HOST";
@@ -68,6 +70,9 @@ public record BrokerConfig(
   private static final String RAFT_MAX_ENTRIES_PER_APPEND = "RAFT_MAX_ENTRIES_PER_APPEND";
   private static final String RAFT_PROPOSE_TIMEOUT_MS = "RAFT_PROPOSE_TIMEOUT_MS";
   private static final String RAFT_LEADER_WAIT_MS = "RAFT_LEADER_WAIT_MS";
+  private static final String BROKER_PUBLISH_QUEUE_CAPACITY = "BROKER_PUBLISH_QUEUE_CAPACITY";
+  private static final String BROKER_PUBLISH_ACQUIRE_TIMEOUT_MS =
+      "BROKER_PUBLISH_ACQUIRE_TIMEOUT_MS";
   private static final int DEFAULT_MAX_POLL_BYTES = 1024 * 1024;
   private static final int DEFAULT_PARTITIONS = 1;
   private static final String DEFAULT_OFFSET_SUBDIR = "__offsets";
@@ -76,6 +81,8 @@ public record BrokerConfig(
   private static final long DEFAULT_PEER_RECONNECT_BACKOFF_MS = 500;
   private static final long DEFAULT_RAFT_PROPOSE_TIMEOUT_MS = 5000;
   private static final long DEFAULT_RAFT_LEADER_WAIT_MS = 2000;
+  private static final int DEFAULT_PUBLISH_QUEUE_CAPACITY = 1000;
+  private static final long DEFAULT_PUBLISH_ACQUIRE_TIMEOUT_MS = 100;
 
   /**
    * Loads configuration from environment variables. Throws if a required variable is missing or
@@ -143,6 +150,10 @@ public record BrokerConfig(
     long raftProposeTimeoutMs =
         optionalLong(env, RAFT_PROPOSE_TIMEOUT_MS, DEFAULT_RAFT_PROPOSE_TIMEOUT_MS);
     long raftLeaderWaitMs = optionalLong(env, RAFT_LEADER_WAIT_MS, DEFAULT_RAFT_LEADER_WAIT_MS);
+    int publishQueueCapacity =
+        optionalInt(env, BROKER_PUBLISH_QUEUE_CAPACITY, DEFAULT_PUBLISH_QUEUE_CAPACITY);
+    long publishAcquireTimeoutMs =
+        optionalLong(env, BROKER_PUBLISH_ACQUIRE_TIMEOUT_MS, DEFAULT_PUBLISH_ACQUIRE_TIMEOUT_MS);
 
     return new BrokerConfig(
         brokerId,
@@ -169,7 +180,9 @@ public record BrokerConfig(
         raftRpcTimeoutMs,
         raftMaxEntriesPerAppend,
         raftProposeTimeoutMs,
-        raftLeaderWaitMs);
+        raftLeaderWaitMs,
+        publishQueueCapacity,
+        publishAcquireTimeoutMs);
   }
 
   private static FsyncPolicy parseFsyncPolicy(String value) {

@@ -85,6 +85,12 @@ class MessageCodecTest {
   }
 
   @Test
+  void errorRespRoundTripsBrokerBusyCode() throws ProtocolException {
+    ErrorResp original = new ErrorResp(19L, ErrorResp.CODE_BROKER_BUSY, "publish queue full");
+    assertEquals(original, codec.decode(codec.encode(original)));
+  }
+
+  @Test
   void emptyPayloadRoundTrips() throws ProtocolException {
     PublishReq original = new PublishReq(1L, "t", 0, -1, -1, null, new byte[0]);
     assertEquals(original, codec.decode(codec.encode(original)));

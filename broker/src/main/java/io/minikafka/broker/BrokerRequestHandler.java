@@ -99,6 +99,8 @@ public final class BrokerRequestHandler implements RequestHandler {
       // NOT_LEADER would send the client into RedirectingCall's retry loop and re-send a request
       // the broker has permanently rejected.
       return new ErrorResp(req.correlationId(), ErrorResp.CODE_SEQUENCE_GAP, e.getMessage());
+    } catch (BrokerBusyException e) {
+      return new ErrorResp(req.correlationId(), ErrorResp.CODE_BROKER_BUSY, e.getMessage());
     } catch (IllegalStateException e) {
       // Propose timed out waiting for commit, or the committed entry failed to apply — report
       // honestly (per CLAUDE.md, never swallow a durability/replication error) rather than let it

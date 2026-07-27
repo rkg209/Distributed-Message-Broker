@@ -31,6 +31,7 @@ public final class PartitionManager implements AutoCloseable {
   private final TopicRegistry registry;
   private final Map<TopicPartition, PartitionReplica> replicas = new ConcurrentHashMap<>();
   private final ExecutorService vthreads = Executors.newVirtualThreadPerTaskExecutor();
+  private final BackpressureController backpressure;
 
   public PartitionManager(
       BrokerConfig config,
@@ -42,6 +43,8 @@ public final class PartitionManager implements AutoCloseable {
     this.clusterConfig = clusterConfig;
     this.selfId = config.brokerId();
     this.registry = new TopicRegistry(logFactory);
+    this.backpressure =
+        new BackpressureController(config.publishQueueCapacity(), config.publishAcquireTimeoutMs());
   }
 
   /**
@@ -76,12 +79,24 @@ public final class PartitionManager implements AutoCloseable {
    *     partition's Raft leader
    * @throws SequenceGapException if {@code seqNo} skips ahead of this producer's last committed
    *     sequence for the partition
+   * @throws BrokerBusyException if this partition's publish admission gate is saturated — rejected
+   *     strictly before {@link io.minikafka.raft.RaftNode#propose}, so a busy publish provably
+   *     never reaches the Raft log
    */
   public AppendResult publish(
       String topic, int partition, long producerId, long seqNo, byte[] key, byte[] payload) {
     validatePartition(topic, partition);
     metadataService.markTouched(topic);
-    return replicaFor(new TopicPartition(topic, partition)).append(producerId, seqNo, key, payload);
+    TopicPartition tp = new TopicPartition(topic, partition);
+    if (!backpressure.tryAcquire(tp)) {
+      throw new BrokerBusyException(tp, backpressure.capacity());
+    }
+    try {
+      return replicaFor(tp).append(producerId, seqNo, key, payload);
+    } finally {
+      // Must be finally: a leaked permit on any exception path is a permanent capacity loss.
+      backpressure.release(tp);
+    }
   }
 
   /**
@@ -101,6 +116,11 @@ public final class PartitionManager implements AutoCloseable {
   /** The replica for {@code tp}, or {@code null} if this broker doesn't host it. */
   PartitionReplica replica(TopicPartition tp) {
     return replicas.get(tp);
+  }
+
+  /** Publishes currently in flight for {@code tp} — for backpressure tests and metrics. */
+  int inFlightPublishes(TopicPartition tp) {
+    return backpressure.inFlight(tp);
   }
 
   /** This broker's current leader epoch (Raft term) for {@code tp}, or {@code 0} if unhosted. */

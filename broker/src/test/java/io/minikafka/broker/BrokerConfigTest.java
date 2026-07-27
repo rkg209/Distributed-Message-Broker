@@ -279,4 +279,24 @@ class BrokerConfigTest {
 
     assertEquals(java.nio.file.Path.of("/tmp/mini-kafka-test", "orders-0", "raft"), dir);
   }
+
+  @Test
+  void defaultsPublishBackpressureSettingsWhenUnset() {
+    BrokerConfig config = BrokerConfig.fromEnv(baseEnv()::get);
+
+    assertEquals(1000, config.publishQueueCapacity());
+    assertEquals(100, config.publishAcquireTimeoutMs());
+  }
+
+  @Test
+  void parsesPublishBackpressureSettingsWhenSet() {
+    Map<String, String> env = baseEnv();
+    env.put("BROKER_PUBLISH_QUEUE_CAPACITY", "10");
+    env.put("BROKER_PUBLISH_ACQUIRE_TIMEOUT_MS", "5");
+
+    BrokerConfig config = BrokerConfig.fromEnv(env::get);
+
+    assertEquals(10, config.publishQueueCapacity());
+    assertEquals(5, config.publishAcquireTimeoutMs());
+  }
 }
