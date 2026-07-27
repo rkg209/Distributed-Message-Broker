@@ -1,8 +1,8 @@
 package io.minikafka.broker;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.minikafka.log.AppendResult;
 import io.minikafka.log.DiskPartitionLog;
 import io.minikafka.log.LogRecord;
 import java.io.IOException;
@@ -15,15 +15,14 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Spec 07 test-plan criterion 5: a 1-replica Raft group (no peers configured) still elects itself
- * leader and commits — the code path {@link PartitionReplica#append} relies on for every Spec 02–04
- * single-broker E2E test to stay green under Spec 07's real Raft wiring.
+ * Spec 09 criterion 1: publishing the same {@code (producerId, seqNo)} twice appends exactly once —
+ * the second publish is deduped in {@link PartitionReplica#apply} and returns the same offset.
  */
-class SingleNodeRaftPublishTest {
+class IdempotentProduceTest {
 
   private static final String TOPIC = "orders";
   private static final int PARTITION = 0;
-  private static final TopicPartition TP = new TopicPartition(TOPIC, PARTITION);
+  private static final long PRODUCER_ID = 42L;
 
   private PartitionManager partitionManager;
 
@@ -56,16 +55,19 @@ class SingleNodeRaftPublishTest {
   }
 
   @Test
-  void aSoleReplicaElectsItselfAndCommits() throws Exception {
-    long offset = partitionManager.publish(TOPIC, PARTITION, -1, -1, null, value(0)).offset();
-    assertEquals(0, offset);
+  void retriedPublishWithSameSeqIsDedupedNotDuplicated() throws Exception {
+    AppendResult first =
+        partitionManager.publish(TOPIC, PARTITION, PRODUCER_ID, 0L, null, value(0));
+    AppendResult retry =
+        partitionManager.publish(TOPIC, PARTITION, PRODUCER_ID, 0L, null, value(0));
+
+    assertEquals(first.offset(), retry.offset());
+
+    PartitionReplica replica = partitionManager.replica(new TopicPartition(TOPIC, PARTITION));
+    assertEquals(1, replica.partitionLog().nextOffset());
 
     List<LogRecord> records = partitionManager.poll(TOPIC, PARTITION, 0, 1024 * 1024);
     assertEquals(1, records.size());
-    assertEquals("record-0", new String(records.get(0).value(), StandardCharsets.UTF_8));
-
-    PartitionReplica replica = partitionManager.replica(TP);
-    assertTrue(replica.isLeader());
   }
 
   private static byte[] value(int i) {

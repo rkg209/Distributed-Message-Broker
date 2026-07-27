@@ -3,10 +3,17 @@ package io.minikafka.log;
 import java.util.Arrays;
 
 /**
- * An immutable record stored in a {@link PartitionLog}. Spec 02 leaves {@code key} unused (null) —
- * keys arrive in Spec 04.
+ * An immutable record stored in a {@link PartitionLog}. {@code producerId == NO_PRODUCER_ID} marks
+ * a non-idempotent record (bypasses dedup entirely).
  */
-public record LogRecord(long offset, long timestamp, byte[] key, byte[] value) {
+public record LogRecord(
+    long offset, long timestamp, long producerId, long seqNo, byte[] key, byte[] value) {
+
+  /** Sentinel producer id for non-idempotent records. */
+  public static final long NO_PRODUCER_ID = -1L;
+
+  /** Sentinel sequence number paired with {@link #NO_PRODUCER_ID}. */
+  public static final long NO_SEQ = -1L;
 
   public LogRecord {
     if (value == null) {
@@ -22,6 +29,8 @@ public record LogRecord(long offset, long timestamp, byte[] key, byte[] value) {
     return o instanceof LogRecord r
         && offset == r.offset
         && timestamp == r.timestamp
+        && producerId == r.producerId
+        && seqNo == r.seqNo
         && Arrays.equals(key, r.key)
         && Arrays.equals(value, r.value);
   }
@@ -30,6 +39,8 @@ public record LogRecord(long offset, long timestamp, byte[] key, byte[] value) {
   public int hashCode() {
     int result = Long.hashCode(offset);
     result = 31 * result + Long.hashCode(timestamp);
+    result = 31 * result + Long.hashCode(producerId);
+    result = 31 * result + Long.hashCode(seqNo);
     result = 31 * result + Arrays.hashCode(key);
     result = 31 * result + Arrays.hashCode(value);
     return result;
@@ -41,6 +52,10 @@ public record LogRecord(long offset, long timestamp, byte[] key, byte[] value) {
         + offset
         + ", timestamp="
         + timestamp
+        + ", producerId="
+        + producerId
+        + ", seqNo="
+        + seqNo
         + ", valueLen="
         + value.length
         + "]";

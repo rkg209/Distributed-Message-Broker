@@ -58,7 +58,9 @@ public final class DiskPartitionLog implements PartitionLog, AutoCloseable {
     try {
       long offset = segmentManager.nextOffset();
       long timestamp = record.timestamp() != 0 ? record.timestamp() : System.currentTimeMillis();
-      LogRecord toWrite = new LogRecord(offset, timestamp, record.key(), record.value());
+      LogRecord toWrite =
+          new LogRecord(
+              offset, timestamp, record.producerId(), record.seqNo(), record.key(), record.value());
       segmentManager.append(toWrite);
       return new AppendResult(offset, timestamp);
     } catch (IOException e) {

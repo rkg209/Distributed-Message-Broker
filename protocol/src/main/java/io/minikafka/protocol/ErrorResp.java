@@ -31,6 +31,12 @@ public record ErrorResp(long correlationId, int errorCode, String message) imple
    */
   public static final int CODE_STALE_LEADER_EPOCH = 6;
 
+  /**
+   * The broker rejected a publish because its sequence number skipped ahead of {@code lastCommitted
+   * + 1}. The message was <b>not</b> appended and the producer must not treat it as delivered.
+   */
+  public static final int CODE_SEQUENCE_GAP = 7;
+
   public ErrorResp {
     if (message == null) {
       throw new IllegalArgumentException("message must not be null");

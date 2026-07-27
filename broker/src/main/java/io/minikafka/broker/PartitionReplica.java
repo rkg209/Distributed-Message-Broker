@@ -11,12 +11,12 @@ import io.minikafka.raft.RaftNode;
 import io.minikafka.raft.RaftRole;
 import io.minikafka.raft.StateMachine;
 import java.nio.ByteBuffer;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Owns one {@link RaftNode} + one {@link PartitionLog} + one {@link FileRaftLogStore} + {@link
@@ -40,15 +40,21 @@ final class PartitionReplica implements StateMachine, AutoCloseable {
   private RaftNode raftNode;
 
   // RaftNode always replays committed entries from index 1 on every restart (it persists no
-  // apply-progress marker of its own — see raft.RaftNode#lastApplied). The durable PartitionLog,
-  // however, already recovered whatever it had previously applied. This counter — how many
-  // non-empty entries were already applied before this run — lets apply() skip re-appending
-  // exactly that many historical entries so a restart doesn't duplicate committed records
-  // (INV-3). It MUST be nextOffset() alone, not nextOffset() - firstOffset(): nextOffset() is the
-  // total count of records ever assigned (monotonic, offsets are 0-based and sequential), while
-  // firstOffset() shrinks the "count" once retention deletes old segments — subtracting it would
-  // under-count already-applied entries and re-duplicate the retained tail on restart.
-  private final AtomicLong skipRemaining;
+  // apply-progress marker of its own — see raft.RaftNode#lastApplied). This durable marker records
+  // the highest Raft index whose apply() outcome was already decided in a prior run, so apply()
+  // can skip re-deciding exactly those entries on replay. It must be index-based, not derived from
+  // PartitionLog#nextOffset(): nextOffset() only advances on an APPEND outcome, so it undercounts
+  // whenever a committed DUPLICATE or GAP entry (occupies a Raft index, appends nothing) is
+  // interleaved with APPENDs — see AppliedIndexStore's javadoc.
+  private final AppliedIndexStore appliedIndexStore;
+  private final long lastAppliedIndexAtStartup;
+
+  // Rebuilt from the recovered log (not Raft replay) in the constructor — every replica converges
+  // on the same idempotency state independent of appliedIndexStore's replay-skip boundary.
+  private final IdempotencyStore idempotency;
+
+  /** Prefix on {@link ApplyResult#error()} identifying a {@link SequenceGapException}. */
+  private static final String SEQUENCE_GAP_PREFIX = "SEQUENCE_GAP:";
 
   PartitionReplica(
       TopicPartition tp,
@@ -56,6 +62,7 @@ final class PartitionReplica implements StateMachine, AutoCloseable {
       PartitionLog partitionLog,
       BrokerRaftTransport transport,
       MetadataService metadataService,
+      Path appliedIndexFile,
       long proposeTimeoutMs,
       long leaderWaitMs) {
     this.tp = tp;
@@ -65,7 +72,9 @@ final class PartitionReplica implements StateMachine, AutoCloseable {
     this.metadataService = metadataService;
     this.proposeTimeoutMs = proposeTimeoutMs;
     this.leaderWaitMs = leaderWaitMs;
-    this.skipRemaining = new AtomicLong(partitionLog.nextOffset());
+    this.appliedIndexStore = new AppliedIndexStore(appliedIndexFile);
+    this.lastAppliedIndexAtStartup = appliedIndexStore.lastAppliedIndexAtStartup();
+    this.idempotency = IdempotencyStore.rebuildFrom(partitionLog);
   }
 
   /**
@@ -85,26 +94,41 @@ final class PartitionReplica implements StateMachine, AutoCloseable {
 
   @Override
   public ApplyResult apply(long index, byte[] command) {
+    if (index <= lastAppliedIndexAtStartup) {
+      // Already durably decided in a prior run; no proposer is awaiting this replay, so the
+      // returned outcome is never observed.
+      return ApplyResult.ok(new byte[0]);
+    }
+    ApplyResult result;
     if (command.length == 0) {
       // The leader's per-term no-op entry (RaftNode.becomeLeader) — applying it as a record would
       // corrupt every replica's log.
-      return ApplyResult.ok(new byte[0]);
+      result = ApplyResult.ok(new byte[0]);
+    } else {
+      LogRecord decoded = PartitionCommandCodec.decode(command);
+      IdempotencyStore.Verdict verdict = idempotency.check(decoded.producerId(), decoded.seqNo());
+      result =
+          switch (verdict.decision()) {
+            case DUPLICATE -> ApplyResult.ok(encodeLong(verdict.cachedOffset()));
+            case GAP -> ApplyResult.error(SEQUENCE_GAP_PREFIX + verdict.expectedSeq());
+            case APPEND -> {
+              AppendResult appendResult = partitionLog.append(decoded);
+              idempotency.record(decoded.producerId(), decoded.seqNo(), appendResult.offset());
+              yield ApplyResult.ok(encodeLong(appendResult.offset()));
+            }
+          };
     }
-    if (skipRemaining.getAndUpdate(n -> n > 0 ? n - 1 : 0) > 0) {
-      // Already durably applied in a prior run; no proposer is awaiting this replay, so the
-      // returned offset is never observed.
-      return ApplyResult.ok(new byte[0]);
-    }
-    LogRecord decoded = PartitionCommandCodec.decode(command);
-    AppendResult result = partitionLog.append(decoded);
-    return ApplyResult.ok(encodeLong(result.offset()));
+    // Ordered after partitionLog.append() above returns, so under the default EVERY_WRITE fsync
+    // policy this marker is never durable ahead of the record it corresponds to.
+    appliedIndexStore.record(index);
+    return result;
   }
 
   /** The publish path: waits for leadership, proposes, and blocks until the entry is committed. */
-  AppendResult append(byte[] key, byte[] payload) {
+  AppendResult append(long producerId, long seqNo, byte[] key, byte[] payload) {
     awaitLeadership();
     long timestamp = System.currentTimeMillis();
-    byte[] command = PartitionCommandCodec.encode(timestamp, key, payload);
+    byte[] command = PartitionCommandCodec.encode(timestamp, producerId, seqNo, key, payload);
     CompletableFuture<ApplyResult> future = raftNode.propose(command);
     ApplyResult result;
     try {
@@ -122,6 +146,10 @@ final class PartitionReplica implements StateMachine, AutoCloseable {
       throw new IllegalStateException("Publish to " + tp + " interrupted while awaiting commit", e);
     }
     if (!result.isOk()) {
+      if (result.error().startsWith(SEQUENCE_GAP_PREFIX)) {
+        long expectedSeq = Long.parseLong(result.error().substring(SEQUENCE_GAP_PREFIX.length()));
+        throw new SequenceGapException(tp, producerId, expectedSeq, seqNo);
+      }
       throw new IllegalStateException("Publish to " + tp + " failed to apply: " + result.error());
     }
     return new AppendResult(decodeLong(result.value()), timestamp);
@@ -184,5 +212,6 @@ final class PartitionReplica implements StateMachine, AutoCloseable {
     raftLogStore.close();
     transport.close();
     partitionLog.close();
+    appliedIndexStore.close();
   }
 }

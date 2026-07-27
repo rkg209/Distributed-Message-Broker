@@ -21,7 +21,7 @@ class PartialWriteRecoveryTest {
     int n = 20;
     try (DiskPartitionLog log = new DiskPartitionLog(config)) {
       for (int i = 0; i < n; i++) {
-        log.append(new LogRecord(0, 0, null, ("value-" + i).getBytes()));
+        log.append(new LogRecord(0, 0, -1, -1, null, ("value-" + i).getBytes()));
       }
     }
 
@@ -36,7 +36,7 @@ class PartialWriteRecoveryTest {
       List<LogRecord> records = reopened.read(0, Integer.MAX_VALUE);
       assertEquals(n - 1, records.size());
 
-      AppendResult result = reopened.append(new LogRecord(0, 0, null, "next".getBytes()));
+      AppendResult result = reopened.append(new LogRecord(0, 0, -1, -1, null, "next".getBytes()));
       assertEquals(n - 1, result.offset());
     }
   }
@@ -47,7 +47,7 @@ class PartialWriteRecoveryTest {
     int n = 20;
     try (DiskPartitionLog log = new DiskPartitionLog(config)) {
       for (int i = 0; i < n; i++) {
-        log.append(new LogRecord(0, 0, null, ("value-" + i).getBytes()));
+        log.append(new LogRecord(0, 0, -1, -1, null, ("value-" + i).getBytes()));
       }
     }
 

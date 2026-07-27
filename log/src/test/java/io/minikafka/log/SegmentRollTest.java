@@ -21,7 +21,7 @@ class SegmentRollTest {
 
     try (DiskPartitionLog log = new DiskPartitionLog(config)) {
       for (int i = 0; i < recordCount; i++) {
-        log.append(new LogRecord(0, 0, null, value));
+        log.append(new LogRecord(0, 0, -1, -1, null, value));
       }
     }
 

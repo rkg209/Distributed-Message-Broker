@@ -65,7 +65,7 @@ class NoOpEntryTest {
     assertTrue(replica.commitIndex() >= 1, "expected the no-op entry to already be committed");
     assertEquals(0, replica.partitionLog().nextOffset(), "no-op entry must not become a record");
 
-    long offset = partitionManager.publish(TOPIC, PARTITION, null, value(0)).offset();
+    long offset = partitionManager.publish(TOPIC, PARTITION, -1, -1, null, value(0)).offset();
     assertEquals(0, offset);
     assertEquals(1, replica.partitionLog().nextOffset());
   }

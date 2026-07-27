@@ -58,8 +58,8 @@
 | 05 | Cluster Membership & Metadata | done | 2026-07-22 |
 | 06 | Raft Consensus Core | done | 2026-07-22 |
 | 07 | Replicated Partitions via Raft | done | 2026-07-22 |
-| 08 | Leader Failover & Epoch Fencing | todo | — |
-| 09 | Idempotent Producer | todo | — |
+| 08 | Leader Failover & Epoch Fencing | done | 2026-07-27 |
+| 09 | Idempotent Producer | done | 2026-07-27 |
 | 10 | Backpressure & Flow Control | todo | — |
 | 11 | Chaos Harness & Linearizability | todo | — |
 | 12 | Benchmarks | todo | — |

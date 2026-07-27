@@ -81,12 +81,24 @@ public final class BrokerRequestHandler implements RequestHandler {
   private Message handlePublish(PublishReq req) {
     AppendResult result;
     try {
-      result = partitionManager.publish(req.topic(), req.partition(), req.key(), req.payload());
+      result =
+          partitionManager.publish(
+              req.topic(),
+              req.partition(),
+              req.producerId(),
+              req.seqNo(),
+              req.key(),
+              req.payload());
     } catch (UnknownPartitionException e) {
       return new ErrorResp(req.correlationId(), ErrorResp.CODE_UNKNOWN_PARTITION, e.getMessage());
     } catch (NotLeaderException e) {
       return new ErrorResp(
           req.correlationId(), ErrorResp.CODE_NOT_LEADER, "leader is " + e.leaderId());
+    } catch (SequenceGapException e) {
+      // Must be caught before IllegalStateException below: a SEQUENCE_GAP misclassified as
+      // NOT_LEADER would send the client into RedirectingCall's retry loop and re-send a request
+      // the broker has permanently rejected.
+      return new ErrorResp(req.correlationId(), ErrorResp.CODE_SEQUENCE_GAP, e.getMessage());
     } catch (IllegalStateException e) {
       // Propose timed out waiting for commit, or the committed entry failed to apply — report
       // honestly (per CLAUDE.md, never swallow a durability/replication error) rather than let it

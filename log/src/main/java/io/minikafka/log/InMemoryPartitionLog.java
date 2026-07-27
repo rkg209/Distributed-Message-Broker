@@ -23,7 +23,14 @@ public final class InMemoryPartitionLog implements PartitionLog {
     try {
       long offset = records.size();
       long timestamp = record.timestamp() != 0 ? record.timestamp() : System.currentTimeMillis();
-      records.add(new LogRecord(offset, timestamp, record.key(), record.value()));
+      records.add(
+          new LogRecord(
+              offset,
+              timestamp,
+              record.producerId(),
+              record.seqNo(),
+              record.key(),
+              record.value()));
       return new AppendResult(offset, timestamp);
     } finally {
       lock.writeLock().unlock();

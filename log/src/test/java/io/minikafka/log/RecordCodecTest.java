@@ -14,7 +14,7 @@ class RecordCodecTest {
 
   @Test
   void roundTripsWithNullKey() {
-    LogRecord record = new LogRecord(7, 12345L, null, "hello".getBytes());
+    LogRecord record = new LogRecord(7, 12345L, -1, -1, null, "hello".getBytes());
     byte[] encoded = RecordCodec.encode(record);
     assertEquals(RecordCodec.sizeOf(record), encoded.length);
 
@@ -24,7 +24,7 @@ class RecordCodecTest {
 
   @Test
   void roundTripsWithKey() {
-    LogRecord record = new LogRecord(3, 99L, "k".getBytes(), "v".getBytes());
+    LogRecord record = new LogRecord(3, 99L, -1, -1, "k".getBytes(), "v".getBytes());
     byte[] encoded = RecordCodec.encode(record);
 
     LogRecord decoded = RecordCodec.decode(ByteBuffer.wrap(encoded));
@@ -33,7 +33,7 @@ class RecordCodecTest {
 
   @Test
   void roundTripsWithEmptyValue() {
-    LogRecord record = new LogRecord(0, 1L, null, new byte[0]);
+    LogRecord record = new LogRecord(0, 1L, -1, -1, null, new byte[0]);
     byte[] encoded = RecordCodec.encode(record);
 
     LogRecord decoded = RecordCodec.decode(ByteBuffer.wrap(encoded));
@@ -44,7 +44,7 @@ class RecordCodecTest {
   void roundTripsWithLargeValue() {
     byte[] value = new byte[64 * 1024];
     new Random(42).nextBytes(value);
-    LogRecord record = new LogRecord(1, 1L, null, value);
+    LogRecord record = new LogRecord(1, 1L, -1, -1, null, value);
     byte[] encoded = RecordCodec.encode(record);
 
     LogRecord decoded = RecordCodec.decode(ByteBuffer.wrap(encoded));
@@ -53,7 +53,7 @@ class RecordCodecTest {
 
   @Test
   void detectsCrcMismatch() {
-    LogRecord record = new LogRecord(0, 1L, null, "hello".getBytes());
+    LogRecord record = new LogRecord(0, 1L, -1, -1, null, "hello".getBytes());
     byte[] encoded = RecordCodec.encode(record);
     encoded[encoded.length - 1] ^= 0xFF; // flip a byte in the CRC field
 
@@ -64,9 +64,9 @@ class RecordCodecTest {
 
   @Test
   void detectsCorruptionInPayload() {
-    LogRecord record = new LogRecord(0, 1L, null, "hello".getBytes());
+    LogRecord record = new LogRecord(0, 1L, -1, -1, null, "hello".getBytes());
     byte[] encoded = RecordCodec.encode(record);
-    encoded[26] ^= 0xFF; // flip a byte inside the value ("hello" occupies bytes 24-28)
+    encoded[42] ^= 0xFF; // flip a byte inside the value ("hello" occupies bytes 40-44)
 
     assertThrows(
         RecordCodec.CorruptRecordException.class,
@@ -75,7 +75,7 @@ class RecordCodecTest {
 
   @Test
   void returnsNullOnTruncatedBuffer() {
-    LogRecord record = new LogRecord(0, 1L, null, "hello world".getBytes());
+    LogRecord record = new LogRecord(0, 1L, -1, -1, null, "hello world".getBytes());
     byte[] encoded = RecordCodec.encode(record);
     byte[] truncated = new byte[encoded.length - 3];
     System.arraycopy(encoded, 0, truncated, 0, truncated.length);
@@ -97,7 +97,7 @@ class RecordCodecTest {
   void roundTripsRandomSizes(int size) {
     byte[] value = new byte[size];
     new Random(size).nextBytes(value);
-    LogRecord record = new LogRecord(size, size, null, value);
+    LogRecord record = new LogRecord(size, size, -1, -1, null, value);
     byte[] encoded = RecordCodec.encode(record);
 
     LogRecord decoded = RecordCodec.decode(ByteBuffer.wrap(encoded));

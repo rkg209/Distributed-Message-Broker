@@ -67,17 +67,21 @@ public final class PartitionManager implements AutoCloseable {
 
   /**
    * Appends {@code payload} (with optional routing {@code key}) to the given partition,
-   * auto-creating its Raft group if necessary, and blocks until majority-committed.
+   * auto-creating its Raft group if necessary, and blocks until majority-committed. Pass {@link
+   * io.minikafka.protocol.PublishReq#NO_PRODUCER_ID}/{@code NO_SEQ} to bypass idempotent dedup.
    *
    * @throws UnknownPartitionException if {@code partition} is outside the topic's configured
    *     partition count
    * @throws io.minikafka.raft.NotLeaderException if this broker is not (or is no longer) the
    *     partition's Raft leader
+   * @throws SequenceGapException if {@code seqNo} skips ahead of this producer's last committed
+   *     sequence for the partition
    */
-  public AppendResult publish(String topic, int partition, byte[] key, byte[] payload) {
+  public AppendResult publish(
+      String topic, int partition, long producerId, long seqNo, byte[] key, byte[] payload) {
     validatePartition(topic, partition);
     metadataService.markTouched(topic);
-    return replicaFor(new TopicPartition(topic, partition)).append(key, payload);
+    return replicaFor(new TopicPartition(topic, partition)).append(producerId, seqNo, key, payload);
   }
 
   /**
@@ -146,6 +150,7 @@ public final class PartitionManager implements AutoCloseable {
             partitionLog,
             transport,
             metadataService,
+            raftConfig.stateDir().resolve("applied.index"),
             config.raftProposeTimeoutMs(),
             config.raftLeaderWaitMs());
     RaftNode raftNode =

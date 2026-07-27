@@ -25,7 +25,7 @@ class RetentionTest {
       int recordsPerSegment = (segmentBytes / 48) + 10;
       int recordCount = recordsPerSegment * 6; // well past 2 segments' worth of retention
       for (int i = 0; i < recordCount; i++) {
-        log.append(new LogRecord(0, 0, null, value));
+        log.append(new LogRecord(0, 0, -1, -1, null, value));
       }
 
       assertTrue(log.firstOffset() > 0, "expected retention to advance firstOffset past 0");
@@ -50,7 +50,7 @@ class RetentionTest {
     try (DiskPartitionLog log = new DiskPartitionLog(config)) {
       int recordsPerSegment = (segmentBytes / 48) + 5;
       for (int i = 0; i < recordsPerSegment; i++) {
-        log.append(new LogRecord(0, 0, null, value));
+        log.append(new LogRecord(0, 0, -1, -1, null, value));
       }
       log.flush();
 
@@ -60,7 +60,7 @@ class RetentionTest {
 
       // Force a roll + retention check.
       for (int i = 0; i < recordsPerSegment * 2; i++) {
-        log.append(new LogRecord(0, 0, null, value));
+        log.append(new LogRecord(0, 0, -1, -1, null, value));
       }
 
       assertTrue(log.firstOffset() > 0, "expected retentionMs to delete the aged-out segment");

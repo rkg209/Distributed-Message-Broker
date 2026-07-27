@@ -28,7 +28,7 @@ class DiskPartitionLogTest {
   void appendAssignsMonotonicOffsets(@TempDir Path dir) {
     try (DiskPartitionLog log = open(dir)) {
       for (int i = 0; i < 5; i++) {
-        AppendResult result = log.append(new LogRecord(0, 0, null, ("v" + i).getBytes()));
+        AppendResult result = log.append(new LogRecord(0, 0, -1, -1, null, ("v" + i).getBytes()));
         assertEquals(i, result.offset());
       }
       assertEquals(5, log.nextOffset());
@@ -39,7 +39,7 @@ class DiskPartitionLogTest {
   void readFromZeroReturnsAllInOrder(@TempDir Path dir) {
     try (DiskPartitionLog log = open(dir)) {
       for (int i = 0; i < 10; i++) {
-        log.append(new LogRecord(0, 0, null, ("v" + i).getBytes()));
+        log.append(new LogRecord(0, 0, -1, -1, null, ("v" + i).getBytes()));
       }
       List<LogRecord> records = log.read(0, Integer.MAX_VALUE);
       assertEquals(10, records.size());
@@ -53,7 +53,7 @@ class DiskPartitionLogTest {
   void readFromMidOffsetReturnsTail(@TempDir Path dir) {
     try (DiskPartitionLog log = open(dir)) {
       for (int i = 0; i < 10; i++) {
-        log.append(new LogRecord(0, 0, null, ("v" + i).getBytes()));
+        log.append(new LogRecord(0, 0, -1, -1, null, ("v" + i).getBytes()));
       }
       List<LogRecord> records = log.read(6, Integer.MAX_VALUE);
       assertEquals(4, records.size());
@@ -65,7 +65,7 @@ class DiskPartitionLogTest {
   @Test
   void readBeyondEndReturnsEmpty(@TempDir Path dir) {
     try (DiskPartitionLog log = open(dir)) {
-      log.append(new LogRecord(0, 0, null, "v0".getBytes()));
+      log.append(new LogRecord(0, 0, -1, -1, null, "v0".getBytes()));
       assertEquals(List.of(), log.read(5, Integer.MAX_VALUE));
       assertEquals(List.of(), log.read(1, Integer.MAX_VALUE));
     }
@@ -82,7 +82,7 @@ class DiskPartitionLogTest {
   void maxBytesCapsBatchButAlwaysReturnsAtLeastOne(@TempDir Path dir) {
     try (DiskPartitionLog log = open(dir)) {
       for (int i = 0; i < 5; i++) {
-        log.append(new LogRecord(0, 0, null, new byte[10]));
+        log.append(new LogRecord(0, 0, -1, -1, null, new byte[10]));
       }
       List<LogRecord> capped = log.read(0, 25);
       assertEquals(2, capped.size());
@@ -106,7 +106,7 @@ class DiskPartitionLogTest {
                     t ->
                         () -> {
                           for (int i = 0; i < perThread; i++) {
-                            log.append(new LogRecord(0, 0, null, "v".getBytes()));
+                            log.append(new LogRecord(0, 0, -1, -1, null, "v".getBytes()));
                             seen.incrementAndGet();
                           }
                         })
@@ -133,7 +133,7 @@ class DiskPartitionLogTest {
     LogConfig config = LogConfig.defaultsFor(dir);
     try (DiskPartitionLog log = new DiskPartitionLog(config)) {
       for (int i = 0; i < 50; i++) {
-        log.append(new LogRecord(0, 0, null, ("v" + i).getBytes()));
+        log.append(new LogRecord(0, 0, -1, -1, null, ("v" + i).getBytes()));
       }
     }
 

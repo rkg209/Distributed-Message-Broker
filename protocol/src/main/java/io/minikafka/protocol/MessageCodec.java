@@ -29,6 +29,8 @@ public final class MessageCodec {
           out.writeLong(m.correlationId());
           writeString(out, m.topic());
           out.writeInt(m.partition());
+          out.writeLong(m.producerId());
+          out.writeLong(m.seqNo());
           writeNullableBytes(out, m.key());
           writeBytes(out, m.payload());
         }
@@ -173,6 +175,8 @@ public final class MessageCodec {
                     in.readLong(),
                     readString(in),
                     in.readInt(),
+                    in.readLong(),
+                    in.readLong(),
                     readNullableBytes(in),
                     readBytes(in));
             case PUBLISH_RESP -> new PublishResp(in.readLong(), in.readLong());

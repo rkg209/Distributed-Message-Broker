@@ -20,7 +20,7 @@ public final class CrashWriterMain {
 
     for (int i = 0; i < count; i++) {
       byte[] value = ("record-" + i).getBytes(StandardCharsets.UTF_8);
-      AppendResult result = log.append(new LogRecord(0, 0, null, value));
+      AppendResult result = log.append(new LogRecord(0, 0, -1, -1, null, value));
       System.out.println(result.offset());
       System.out.flush();
     }

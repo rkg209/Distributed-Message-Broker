@@ -19,7 +19,7 @@ class MessageCodecTest {
 
   static Stream<Message> everyMessageType() {
     return Stream.of(
-        new PublishReq(1L, "orders", 3, new byte[] {5, 6}, new byte[] {1, 2, 3, 4}),
+        new PublishReq(1L, "orders", 3, 42L, 7L, new byte[] {5, 6}, new byte[] {1, 2, 3, 4}),
         new PublishResp(2L, 42L),
         new PollReq(3L, "orders", 3, 100L),
         new PollResp(
@@ -86,13 +86,13 @@ class MessageCodecTest {
 
   @Test
   void emptyPayloadRoundTrips() throws ProtocolException {
-    PublishReq original = new PublishReq(1L, "t", 0, null, new byte[0]);
+    PublishReq original = new PublishReq(1L, "t", 0, -1, -1, null, new byte[0]);
     assertEquals(original, codec.decode(codec.encode(original)));
   }
 
   @Test
   void nullKeyRoundTrips() throws ProtocolException {
-    PublishReq original = new PublishReq(1L, "t", 0, null, new byte[] {1});
+    PublishReq original = new PublishReq(1L, "t", 0, -1, -1, null, new byte[] {1});
     Message decoded = codec.decode(codec.encode(original));
     assertEquals(original, decoded);
     assertEquals(null, ((PublishReq) decoded).key());

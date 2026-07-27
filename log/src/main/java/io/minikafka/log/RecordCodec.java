@@ -5,12 +5,13 @@ import java.util.zip.CRC32;
 
 /**
  * Single source of truth for the on-disk {@link LogRecord} layout: {@code [8B offset][8B
- * timestamp][4B keyLen][key][4B valLen][value][4B CRC32]}, big-endian. {@code keyLen == -1} encodes
- * a null key. The CRC covers every preceding byte of the record.
+ * timestamp][8B producerId][8B seqNo][4B keyLen][key][4B valLen][value][4B CRC32]}, big-endian.
+ * {@code keyLen == -1} encodes a null key. The CRC covers every preceding byte of the record.
  */
 final class RecordCodec {
 
-  private static final int FIXED_HEADER_BYTES = 8 + 8 + 4; // offset + timestamp + keyLen
+  private static final int FIXED_HEADER_BYTES =
+      8 + 8 + 8 + 8 + 4; // offset+timestamp+producerId+seqNo+keyLen
   private static final int NULL_KEY_LEN = -1;
 
   private RecordCodec() {}
@@ -35,6 +36,8 @@ final class RecordCodec {
     ByteBuffer buf = ByteBuffer.allocate(sizeOf(record));
     buf.putLong(record.offset());
     buf.putLong(record.timestamp());
+    buf.putLong(record.producerId());
+    buf.putLong(record.seqNo());
     buf.putInt(keyLen);
     if (key != null) {
       buf.put(key);
@@ -63,6 +66,8 @@ final class RecordCodec {
     }
     long offset = buf.getLong();
     long timestamp = buf.getLong();
+    long producerId = buf.getLong();
+    long seqNo = buf.getLong();
     int keyLen = buf.getInt();
     if (keyLen < NULL_KEY_LEN) {
       buf.position(start);
@@ -101,6 +106,6 @@ final class RecordCodec {
       throw new CorruptRecordException("CRC mismatch for record at offset " + offset);
     }
 
-    return new LogRecord(offset, timestamp, key, value);
+    return new LogRecord(offset, timestamp, producerId, seqNo, key, value);
   }
 }
