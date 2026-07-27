@@ -39,7 +39,8 @@ public record BrokerConfig(
     long raftProposeTimeoutMs,
     long raftLeaderWaitMs,
     int publishQueueCapacity,
-    long publishAcquireTimeoutMs) {
+    long publishAcquireTimeoutMs,
+    long fsyncDelayMs) {
 
   private static final String BROKER_ID = "BROKER_ID";
   private static final String BROKER_HOST = "BROKER_HOST";
@@ -73,6 +74,7 @@ public record BrokerConfig(
   private static final String BROKER_PUBLISH_QUEUE_CAPACITY = "BROKER_PUBLISH_QUEUE_CAPACITY";
   private static final String BROKER_PUBLISH_ACQUIRE_TIMEOUT_MS =
       "BROKER_PUBLISH_ACQUIRE_TIMEOUT_MS";
+  private static final String BROKER_FSYNC_DELAY_MS = "BROKER_FSYNC_DELAY_MS";
   private static final int DEFAULT_MAX_POLL_BYTES = 1024 * 1024;
   private static final int DEFAULT_PARTITIONS = 1;
   private static final String DEFAULT_OFFSET_SUBDIR = "__offsets";
@@ -154,6 +156,7 @@ public record BrokerConfig(
         optionalInt(env, BROKER_PUBLISH_QUEUE_CAPACITY, DEFAULT_PUBLISH_QUEUE_CAPACITY);
     long publishAcquireTimeoutMs =
         optionalLong(env, BROKER_PUBLISH_ACQUIRE_TIMEOUT_MS, DEFAULT_PUBLISH_ACQUIRE_TIMEOUT_MS);
+    long fsyncDelayMs = optionalLong(env, BROKER_FSYNC_DELAY_MS, LogConfig.DEFAULT_FSYNC_DELAY_MS);
 
     return new BrokerConfig(
         brokerId,
@@ -182,7 +185,8 @@ public record BrokerConfig(
         raftProposeTimeoutMs,
         raftLeaderWaitMs,
         publishQueueCapacity,
-        publishAcquireTimeoutMs);
+        publishAcquireTimeoutMs,
+        fsyncDelayMs);
   }
 
   private static FsyncPolicy parseFsyncPolicy(String value) {
@@ -216,7 +220,8 @@ public record BrokerConfig(
         segmentBytes,
         indexIntervalBytes,
         retentionBytes,
-        retentionMs);
+        retentionMs,
+        fsyncDelayMs);
   }
 
   /** Resolves the offset-store directory as a {@link Path}. */

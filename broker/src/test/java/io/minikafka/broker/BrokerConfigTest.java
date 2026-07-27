@@ -299,4 +299,23 @@ class BrokerConfigTest {
     assertEquals(10, config.publishQueueCapacity());
     assertEquals(5, config.publishAcquireTimeoutMs());
   }
+
+  @Test
+  void defaultsFsyncDelayMsWhenUnset() {
+    BrokerConfig config = BrokerConfig.fromEnv(baseEnv()::get);
+
+    assertEquals(LogConfig.DEFAULT_FSYNC_DELAY_MS, config.fsyncDelayMs());
+    assertEquals(0, config.logConfigFor(new TopicPartition("orders", 0)).fsyncDelayMs());
+  }
+
+  @Test
+  void parsesFsyncDelayMsWhenSetAndPlumbsIntoLogConfig() {
+    Map<String, String> env = baseEnv();
+    env.put("BROKER_FSYNC_DELAY_MS", "250");
+
+    BrokerConfig config = BrokerConfig.fromEnv(env::get);
+
+    assertEquals(250, config.fsyncDelayMs());
+    assertEquals(250, config.logConfigFor(new TopicPartition("orders", 0)).fsyncDelayMs());
+  }
 }

@@ -14,7 +14,8 @@ public record LogConfig(
     int maxSegmentBytes,
     int indexIntervalBytes,
     long retentionBytes,
-    long retentionMs) {
+    long retentionMs,
+    long fsyncDelayMs) {
 
   /** 1 GiB — chosen so a segment's max byte position always fits in the index's 4-byte field. */
   public static final int DEFAULT_MAX_SEGMENT_BYTES = 1 << 30;
@@ -22,6 +23,7 @@ public record LogConfig(
   public static final int DEFAULT_INDEX_INTERVAL_BYTES = 4096;
   public static final FsyncPolicy DEFAULT_FSYNC_POLICY = FsyncPolicy.EVERY_WRITE;
   public static final long DEFAULT_FSYNC_INTERVAL_MS = 1000;
+  public static final long DEFAULT_FSYNC_DELAY_MS = 0;
 
   /** Retention disabled. */
   public static final long UNLIMITED = -1;
@@ -43,6 +45,29 @@ public record LogConfig(
     if (indexIntervalBytes <= 0) {
       throw new IllegalArgumentException("indexIntervalBytes must be positive");
     }
+    if (fsyncDelayMs < 0) {
+      throw new IllegalArgumentException("fsyncDelayMs must be >= 0, got: " + fsyncDelayMs);
+    }
+  }
+
+  /** Convenience constructor defaulting {@code fsyncDelayMs} to 0 for existing call sites. */
+  public LogConfig(
+      Path dir,
+      FsyncPolicy fsyncPolicy,
+      long fsyncIntervalMs,
+      int maxSegmentBytes,
+      int indexIntervalBytes,
+      long retentionBytes,
+      long retentionMs) {
+    this(
+        dir,
+        fsyncPolicy,
+        fsyncIntervalMs,
+        maxSegmentBytes,
+        indexIntervalBytes,
+        retentionBytes,
+        retentionMs,
+        DEFAULT_FSYNC_DELAY_MS);
   }
 
   /** Convenience factory using every default except the storage directory. */
@@ -54,6 +79,7 @@ public record LogConfig(
         DEFAULT_MAX_SEGMENT_BYTES,
         DEFAULT_INDEX_INTERVAL_BYTES,
         UNLIMITED,
-        UNLIMITED);
+        UNLIMITED,
+        DEFAULT_FSYNC_DELAY_MS);
   }
 }

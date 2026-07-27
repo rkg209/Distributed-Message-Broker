@@ -248,7 +248,8 @@ final class TestCluster implements AutoCloseable {
         DEFAULT_RAFT_PROPOSE_TIMEOUT_MS,
         DEFAULT_RAFT_LEADER_WAIT_MS,
         publishQueueCapacity,
-        publishAcquireTimeoutMs);
+        publishAcquireTimeoutMs,
+        LogConfig.DEFAULT_FSYNC_DELAY_MS);
   }
 
   private static List<BrokerInfo> reservePorts(int brokerCount) throws IOException {

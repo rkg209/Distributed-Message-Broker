@@ -59,6 +59,7 @@ final class TestBrokerConfig {
         5000,
         3000,
         publishQueueCapacity,
-        publishAcquireTimeoutMs);
+        publishAcquireTimeoutMs,
+        LogConfig.DEFAULT_FSYNC_DELAY_MS);
   }
 }

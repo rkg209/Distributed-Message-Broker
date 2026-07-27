@@ -22,6 +22,7 @@ final class LogSegment {
   private final FileChannel channel;
   private final OffsetIndex index;
   private final FsyncPolicy fsyncPolicy;
+  private final long fsyncDelayMs;
   private final LogStats stats;
 
   private long size;
@@ -36,6 +37,7 @@ final class LogSegment {
       FileChannel channel,
       OffsetIndex index,
       FsyncPolicy fsyncPolicy,
+      long fsyncDelayMs,
       LogStats stats,
       long size,
       long lastOffset) {
@@ -46,6 +48,7 @@ final class LogSegment {
     this.channel = channel;
     this.index = index;
     this.fsyncPolicy = fsyncPolicy;
+    this.fsyncDelayMs = fsyncDelayMs;
     this.stats = stats;
     this.size = size;
     this.lastOffset = lastOffset;
@@ -73,7 +76,17 @@ final class LogSegment {
     OffsetIndex index =
         OffsetIndex.open(indexFile, maxIndexEntries(config), config.indexIntervalBytes(), stats);
     return new LogSegment(
-        baseOffset, logFile, indexFile, raf, channel, index, config.fsyncPolicy(), stats, 0, -1);
+        baseOffset,
+        logFile,
+        indexFile,
+        raf,
+        channel,
+        index,
+        config.fsyncPolicy(),
+        config.fsyncDelayMs(),
+        stats,
+        0,
+        -1);
   }
 
   /**
@@ -106,6 +119,7 @@ final class LogSegment {
         channel,
         index,
         config.fsyncPolicy(),
+        config.fsyncDelayMs(),
         stats,
         validSize,
         lastValidOffset);
@@ -191,6 +205,14 @@ final class LogSegment {
   }
 
   void force() throws IOException {
+    if (fsyncDelayMs > 0) {
+      try {
+        Thread.sleep(fsyncDelayMs);
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        throw new IOException("interrupted while simulating fsync delay", e);
+      }
+    }
     channel.force(true);
     index.flush();
   }

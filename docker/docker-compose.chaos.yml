@@ -1,0 +1,29 @@
+name: mini-kafka
+
+# Override layer applied on top of docker-compose.yml by the chaos harness
+# (`docker compose -f docker-compose.yml -f docker-compose.chaos.yml ...`).
+# Tightens Raft timings so leader re-election after an injected crash finishes in a couple hundred
+# milliseconds rather than the production defaults tuned for a stable WAN-ish deployment — without
+# this, a crash-every-few-seconds schedule would spend most of its time waiting on elections instead
+# of exercising them.
+x-broker-common: &broker-common
+  environment: &broker-common-env
+    RAFT_ELECTION_TIMEOUT_MIN_MS: "75"
+    RAFT_ELECTION_TIMEOUT_MAX_MS: "150"
+    RAFT_HEARTBEAT_INTERVAL_MS: "25"
+    BROKER_HEARTBEAT_INTERVAL_MS: "100"
+    BROKER_HEARTBEAT_TIMEOUT_MS: "400"
+
+services:
+  broker-1:
+    <<: *broker-common
+    environment:
+      <<: *broker-common-env
+  broker-2:
+    <<: *broker-common
+    environment:
+      <<: *broker-common-env
+  broker-3:
+    <<: *broker-common
+    environment:
+      <<: *broker-common-env

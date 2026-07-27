@@ -4,6 +4,8 @@ x-broker-common: &broker-common
   build:
     context: ..
     dockerfile: docker/Dockerfile
+  cap_add:
+    - NET_ADMIN
   networks:
     - mini-kafka
   environment: &broker-common-env
@@ -17,6 +19,7 @@ x-broker-common: &broker-common
     BROKER_HEARTBEAT_TIMEOUT_MS: "1000"
     BROKER_PUBLISH_QUEUE_CAPACITY: "1000"
     BROKER_PUBLISH_ACQUIRE_TIMEOUT_MS: "100"
+    BROKER_FSYNC_DELAY_MS: "0"
 
 services:
   broker-1:
