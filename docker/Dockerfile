@@ -1,7 +1,7 @@
-FROM gradle:8-jdk21 AS builder
+FROM eclipse-temurin:21-jdk AS builder
 WORKDIR /workspace
 COPY . .
-RUN gradle :broker:installDist --no-daemon
+RUN ./gradlew :broker:installDist --no-daemon
 
 FROM eclipse-temurin:21-jre
 RUN apt-get update \
