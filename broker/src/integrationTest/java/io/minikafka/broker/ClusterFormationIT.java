@@ -10,6 +10,7 @@ import io.minikafka.protocol.PartitionMetadata;
 import io.minikafka.protocol.ProtocolConfig;
 import io.minikafka.protocol.TopicMetadata;
 import java.io.File;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -33,13 +34,25 @@ class ClusterFormationIT {
 
   private static ComposeContainer environment;
 
+  private static final Duration STARTUP_TIMEOUT = Duration.ofMinutes(5);
+
   @BeforeAll
   static void startCluster() {
     environment =
         new ComposeContainer(new File("../docker/docker-compose.yml"))
-            .withExposedService("broker-1", 9092, Wait.forLogMessage(".*joined cluster.*\\n", 1))
-            .withExposedService("broker-2", 9092, Wait.forLogMessage(".*joined cluster.*\\n", 1))
-            .withExposedService("broker-3", 9092, Wait.forLogMessage(".*joined cluster.*\\n", 1));
+            .withExposedService(
+                "broker-1",
+                9092,
+                Wait.forLogMessage(".*joined cluster.*\\n", 1).withStartupTimeout(STARTUP_TIMEOUT))
+            .withExposedService(
+                "broker-2",
+                9092,
+                Wait.forLogMessage(".*joined cluster.*\\n", 1).withStartupTimeout(STARTUP_TIMEOUT))
+            .withExposedService(
+                "broker-3",
+                9092,
+                Wait.forLogMessage(".*joined cluster.*\\n", 1).withStartupTimeout(STARTUP_TIMEOUT))
+            .withStartupTimeout(STARTUP_TIMEOUT);
     environment.start();
   }
 
