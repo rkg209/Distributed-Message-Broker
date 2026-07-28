@@ -171,9 +171,9 @@ public final class ClusterClient implements AutoCloseable {
   /**
    * Closes and forgets the pooled connection to {@code brokerId}, if any, so the next {@link
    * #connectionFor} opens a fresh one. Callers must do this after any {@link IOException} on a
-   * request over that connection: a read timeout in particular leaves the socket open with a
-   * stale, unread response still buffered for a prior correlation id, and reusing it would corrupt
-   * every subsequent exchange on that connection with a correlation-id mismatch.
+   * request over that connection: a read timeout in particular leaves the socket open with a stale,
+   * unread response still buffered for a prior correlation id, and reusing it would corrupt every
+   * subsequent exchange on that connection with a correlation-id mismatch.
    */
   public void evict(int brokerId) {
     BrokerConnection removed = connections.remove(brokerId);

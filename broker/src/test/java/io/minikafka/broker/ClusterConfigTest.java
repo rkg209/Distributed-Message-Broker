@@ -16,7 +16,8 @@ class ClusterConfigTest {
 
   @Test
   void parsesBrokerList() {
-    ClusterConfig config = ClusterConfig.parse(BROKER_LIST, null, null, null, null, 1, defaultTopics());
+    ClusterConfig config =
+        ClusterConfig.parse(BROKER_LIST, null, null, null, null, 1, defaultTopics());
 
     assertEquals(
         List.of(
@@ -28,7 +29,8 @@ class ClusterConfigTest {
 
   @Test
   void peersOfExcludesSelf() {
-    ClusterConfig config = ClusterConfig.parse(BROKER_LIST, null, null, null, null, 1, defaultTopics());
+    ClusterConfig config =
+        ClusterConfig.parse(BROKER_LIST, null, null, null, null, 1, defaultTopics());
 
     List<Integer> peerIds = config.peersOf(1).stream().map(BrokerInfo::brokerId).toList();
 
@@ -37,7 +39,8 @@ class ClusterConfigTest {
 
   @Test
   void defaultsControllerToLowestBrokerId() {
-    ClusterConfig config = ClusterConfig.parse(BROKER_LIST, null, null, null, null, 2, defaultTopics());
+    ClusterConfig config =
+        ClusterConfig.parse(BROKER_LIST, null, null, null, null, 2, defaultTopics());
 
     assertEquals(1, config.controllerId());
     assertTrue(config.isController(1));
@@ -46,7 +49,8 @@ class ClusterConfigTest {
 
   @Test
   void explicitControllerIdHonored() {
-    ClusterConfig config = ClusterConfig.parse(BROKER_LIST, null, null, null, 3, 1, defaultTopics());
+    ClusterConfig config =
+        ClusterConfig.parse(BROKER_LIST, null, null, null, 3, 1, defaultTopics());
 
     assertEquals(3, config.controllerId());
   }
@@ -101,7 +105,8 @@ class ClusterConfigTest {
 
   @Test
   void assignmentForUnassignedPartitionIsEmpty() {
-    ClusterConfig config = ClusterConfig.parse(BROKER_LIST, null, null, null, null, 1, defaultTopics());
+    ClusterConfig config =
+        ClusterConfig.parse(BROKER_LIST, null, null, null, null, 1, defaultTopics());
 
     assertTrue(config.assignmentFor(new TopicPartition("orders", 0)).isEmpty());
   }
@@ -136,7 +141,8 @@ class ClusterConfigTest {
     assertThrows(
         IllegalStateException.class,
         () ->
-            ClusterConfig.parse(BROKER_LIST, null, "orders:0=1,2,3;orders:0=2,3,1", 3, null, 1, topics));
+            ClusterConfig.parse(
+                BROKER_LIST, null, "orders:0=1,2,3;orders:0=2,3,1", 3, null, 1, topics));
   }
 
   @Test

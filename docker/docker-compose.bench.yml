@@ -1,0 +1,29 @@
+name: mini-kafka
+
+# Override layer applied on top of docker-compose.yml for the RF=3 benchmark run
+# (`docker compose -f docker-compose.yml -f docker-compose.bench.yml ...`).
+# Declares the "bench" topic in both BROKER_TOPICS and PARTITION_ASSIGNMENTS (unlike the base
+# file's "chaos" topic gap that spec 12 found and spec 11 had to fix) so every partition is
+# actually replicated across all three brokers rather than degrading to unreplicated/single-broker.
+# Keeps production Raft/heartbeat timings — this measures steady-state cost, not crash recovery.
+x-broker-common: &broker-common
+  environment: &broker-common-env
+    # Only "bench" here, not "orders" too: REPLICATION_FACTOR is validated against every topic's
+    # assignments, and the RF=1 sibling overlay needs a different value than "orders" ships with.
+    BROKER_TOPICS: "bench:3"
+    PARTITION_ASSIGNMENTS: "bench:0=1,2,3;bench:1=2,3,1;bench:2=3,1,2"
+    REPLICATION_FACTOR: "3"
+
+services:
+  broker-1:
+    <<: *broker-common
+    environment:
+      <<: *broker-common-env
+  broker-2:
+    <<: *broker-common
+    environment:
+      <<: *broker-common-env
+  broker-3:
+    <<: *broker-common
+    environment:
+      <<: *broker-common-env

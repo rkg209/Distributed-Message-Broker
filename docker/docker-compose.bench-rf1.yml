@@ -1,0 +1,28 @@
+name: mini-kafka
+
+# Override layer applied on top of docker-compose.yml for the RF=1 benchmark run
+# (`docker compose -f docker-compose.yml -f docker-compose.bench-rf1.yml ...`).
+# Spreads the three "bench" partitions one-per-broker (rather than replicating all three across
+# every broker) so both the RF=1 and RF=3 configurations exercise all three brokers equally, and
+# the measured throughput/latency delta between them isolates the cost of *replication*, not the
+# cost of using fewer brokers. `RaftNode` treats a degenerate (peerless) Raft group as its own
+# majority, so RF=1 just commits locally after fsync — no broker code change needed.
+x-broker-common: &broker-common
+  environment: &broker-common-env
+    BROKER_TOPICS: "bench:3"
+    PARTITION_ASSIGNMENTS: "bench:0=1;bench:1=2;bench:2=3"
+    REPLICATION_FACTOR: "1"
+
+services:
+  broker-1:
+    <<: *broker-common
+    environment:
+      <<: *broker-common-env
+  broker-2:
+    <<: *broker-common
+    environment:
+      <<: *broker-common-env
+  broker-3:
+    <<: *broker-common
+    environment:
+      <<: *broker-common-env

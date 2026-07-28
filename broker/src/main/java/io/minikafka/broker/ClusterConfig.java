@@ -18,11 +18,11 @@ import java.util.stream.Collectors;
  *
  * <p>{@code ADVERTISED_LIST} — same {@code id@host:port} format, optional. What's handed back to
  * clients as the broker roster ({@link #advertisedBrokers}), so a partition leader lookup can be
- * dialed. Separate from {@code BROKER_LIST} because clients in this project run on the Docker
- * host, not inside the compose network, so they need a host-reachable address (e.g. {@code
- * localhost:9093}) while brokers still address each other by container hostname. Defaults to
- * {@code BROKER_LIST} verbatim when unset, so unset behaves exactly as before this existed. Must
- * name the same broker ids as {@code BROKER_LIST}.
+ * dialed. Separate from {@code BROKER_LIST} because clients in this project run on the Docker host,
+ * not inside the compose network, so they need a host-reachable address (e.g. {@code
+ * localhost:9093}) while brokers still address each other by container hostname. Defaults to {@code
+ * BROKER_LIST} verbatim when unset, so unset behaves exactly as before this existed. Must name the
+ * same broker ids as {@code BROKER_LIST}.
  *
  * <p>{@code PARTITION_ASSIGNMENTS} — {@code topic:partition=leaderId,replicaId...}, entries
  * separated by {@code ;}, e.g. {@code "orders:0=1,2,3;orders:1=2,3,1"}. The first id after {@code
@@ -120,7 +120,10 @@ public record ClusterConfig(
         advertisedBrokers.stream().map(BrokerInfo::brokerId).collect(Collectors.toSet());
     if (!brokerIds.equals(advertisedIds)) {
       throw new IllegalStateException(
-          "ADVERTISED_LIST broker ids " + advertisedIds + " do not match BROKER_LIST ids " + brokerIds);
+          "ADVERTISED_LIST broker ids "
+              + advertisedIds
+              + " do not match BROKER_LIST ids "
+              + brokerIds);
     }
 
     int factor = replicationFactor == null ? 1 : replicationFactor;

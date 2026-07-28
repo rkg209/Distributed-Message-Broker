@@ -28,8 +28,8 @@ public final class BrokerConnection implements AutoCloseable {
    * that goes silent mid-response (killed, partitioned, or just slow) leaves {@link #request}
    * blocked forever — no retry/redirect budget in {@link ProducerClient}, {@link ConsumerClient},
    * or {@link RedirectingCall} can rescue a caller stuck inside a single unbounded read. Sized well
-   * above any realistic broker response time in this project (worst case is a slow-disk fsync
-   * fault plus backpressure queuing, on the order of seconds, not tens of seconds).
+   * above any realistic broker response time in this project (worst case is a slow-disk fsync fault
+   * plus backpressure queuing, on the order of seconds, not tens of seconds).
    */
   public static final int DEFAULT_SOCKET_TIMEOUT_MS = 15_000;
 

@@ -19,17 +19,16 @@ import org.testcontainers.containers.ContainerState;
  * docker-compose.chaos.yml}) the same way {@code ClusterFormationIT} does, exposing the
  * broker-id-keyed operations {@link FaultInjector} needs.
  *
- * <p>Deliberately does not use {@code ComposeContainer.withExposedService} /
- * {@code getContainerByServiceName}: in Testcontainers 1.21.x against Docker Compose V2's
- * container-naming scheme, {@code withExposedService} routes through a shared ambassador
- * container that links to the target by name immediately after {@code up} returns and
- * intermittently fails with "Aborting attempt to link ... as it is not running" even though the
- * container is up, and without it {@code getContainerByServiceName}'s backing map is simply never
- * populated (no wait/exposed-service call means no service-instance tracking at all). Since our
- * compose file publishes fixed host ports, this class instead resolves containers directly
- * through the shared Testcontainers {@link DockerClient} by the {@code
- * com.docker.compose.service} label Compose itself attaches, which sidesteps needing to predict
- * the (Testcontainers-mangled) generated project name entirely.
+ * <p>Deliberately does not use {@code ComposeContainer.withExposedService} / {@code
+ * getContainerByServiceName}: in Testcontainers 1.21.x against Docker Compose V2's container-naming
+ * scheme, {@code withExposedService} routes through a shared ambassador container that links to the
+ * target by name immediately after {@code up} returns and intermittently fails with "Aborting
+ * attempt to link ... as it is not running" even though the container is up, and without it {@code
+ * getContainerByServiceName}'s backing map is simply never populated (no wait/exposed-service call
+ * means no service-instance tracking at all). Since our compose file publishes fixed host ports,
+ * this class instead resolves containers directly through the shared Testcontainers {@link
+ * DockerClient} by the {@code com.docker.compose.service} label Compose itself attaches, which
+ * sidesteps needing to predict the (Testcontainers-mangled) generated project name entirely.
  */
 public final class DockerCluster implements AutoCloseable {
 
@@ -55,7 +54,8 @@ public final class DockerCluster implements AutoCloseable {
   public static DockerCluster start(File composeDir) {
     ComposeContainer environment =
         new ComposeContainer(
-            new File(composeDir, "docker-compose.yml"), new File(composeDir, "docker-compose.chaos.yml"));
+            new File(composeDir, "docker-compose.yml"),
+            new File(composeDir, "docker-compose.chaos.yml"));
     environment.start();
     DockerCluster cluster = new DockerCluster(environment);
     for (int id : BROKER_IDS) {

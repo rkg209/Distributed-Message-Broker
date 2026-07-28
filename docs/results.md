@@ -25,7 +25,7 @@ randomized seeds) both pass but aren't captured by this table's columns; see
 
 | Metric              | RF=1        | RF=3        | RF=3 overhead |
 |---------------------|-------------|-------------|---------------|
-| Throughput (msgs/s) | PENDING     | PENDING     | PENDING       |
+| Throughput (msgs/s) | 1,668/s | 549/s | 67.1% |
 
 **Target:** ≥ 200,000 msgs/sec at RF=3.
 
@@ -35,9 +35,9 @@ randomized seeds) both pass but aren't captured by this table's columns; see
 
 | Percentile | Latency   |
 |------------|-----------|
-| p50        | PENDING   |
-| p99        | PENDING   |
-| p999       | PENDING   |
+| p50        | 7.86 ms |
+| p99        | 61.28 ms |
+| p999       | 63.09 ms |
 
 **Target:** p99 ≤ 8ms at RF=3 under target throughput.
 
@@ -83,6 +83,6 @@ as part of `./gradlew test`.
 | 09 | Idempotent Producer | done | 2026-07-27 |
 | 10 | Backpressure & Flow Control | done | 2026-07-27 |
 | 11 | Chaos Harness & Linearizability | done | 2026-07-28 |
-| 12 | Benchmarks | todo | — |
+| 12 | Benchmarks | done | 2026-07-28 |
 | 13 | Dynamic Rebalancing (STRETCH) | stretch | — |
 | 14 | Demo & Polish | stretch | — |

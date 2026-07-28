@@ -35,7 +35,8 @@ public final class ChaosOrchestrator {
   // budget ~0.5-1s of redirect retries — enough for a fast in-process failover test, but a chaos
   // run's faults are real `docker kill`/container-recreate events: the replacement container needs
   // real wall-clock time to start, rejoin, and (if it was leader) lose an election to a peer before
-  // any client can succeed again. Every producer/consumer thread in a run redirects through the same
+  // any client can succeed again. Every producer/consumer thread in a run redirects through the
+  // same
   // disruption window, so the budget here is sized for that, not for a single client's failover.
   private static final int REDIRECT_MAX_RETRIES = 30;
   private static final long REDIRECT_BACKOFF_MS = 200;
