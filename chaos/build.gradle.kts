@@ -28,6 +28,17 @@ dependencies {
     chaosTestImplementation("org.testcontainers:testcontainers:2.0.5")
 }
 
+tasks.register<JavaExec>("demo") {
+    description = "Runs the one-command failover demo against a running Compose cluster."
+    group = "application"
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass.set("io.minikafka.chaos.demo.DemoRunner")
+    systemProperty("demo.messages", providers.gradleProperty("messages").getOrElse("20000"))
+    systemProperty("demo.killAtMessages", providers.gradleProperty("killAt").getOrElse(""))
+    systemProperty("demo.bootstrap", providers.gradleProperty("bootstrap").getOrElse("localhost:9092"))
+    systemProperty("demo.composeDir", rootProject.file("docker").path)
+}
+
 val chaosTest = tasks.register<Test>("chaosTest") {
     description = "Runs the Docker-backed fault-injection harness. Never part of `test`."
     group = "verification"

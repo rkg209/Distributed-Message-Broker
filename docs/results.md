@@ -67,6 +67,21 @@ as part of `./gradlew test`.
 
 ---
 
+## One-command demo (`scripts/demo.sh`)
+
+| Run | Date | Messages | Kill point | Service killed | Result |
+|-----|------|----------|------------|-----------------|--------|
+| — | — | — | — | — | not yet run |
+
+`scripts/demo.sh` / `:chaos:demo` are new in Spec 14 and have been verified by unit
+test (`DemoConfigTest`, `OffsetContiguityCheckTest`) and `bash -n` syntax check only —
+this development environment has no Docker daemon, so the end-to-end run against a
+live Compose cluster has not yet been executed here. Run `./scripts/demo.sh` locally
+(Docker required) and replace this row with the observed date, message count, kill
+point, and PASS/FAIL.
+
+---
+
 ## Spec Completion Tracker
 
 | Spec | Title | Status | Done Date |
@@ -84,5 +99,5 @@ as part of `./gradlew test`.
 | 10 | Backpressure & Flow Control | done | 2026-07-27 |
 | 11 | Chaos Harness & Linearizability | done | 2026-07-28 |
 | 12 | Benchmarks | done | 2026-07-28 |
-| 13 | Dynamic Rebalancing (STRETCH) | stretch | — |
-| 14 | Demo & Polish | stretch | — |
+| 13 | Dynamic Rebalancing (STRETCH) | done | 2026-07-28 |
+| 14 | Demo & Polish | done | 2026-07-28 |

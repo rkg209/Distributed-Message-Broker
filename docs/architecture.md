@@ -86,12 +86,17 @@ consumer offset commits.
 transactions are explicitly out of scope — they would dwarf the project without adding
 proportional interview signal.
 
-### 4. Consumer groups: static assignment in core
+### 4. Consumer groups: static assignment in core, dynamic rebalancing as a stretch spec
 
-**Choice:** Partition-to-consumer mapping configured at startup.
+**Choice:** Partition-to-consumer mapping configured at startup is the core delivery
+model. Dynamic rebalancing shipped as Spec 13 on top of it: `GroupCoordinator` tracks
+group membership and triggers a rebalance on join/leave/session-timeout, `RangeAssignor`
+computes the new partition assignment, and consumers coordinate over
+`JOIN_GROUP`/`GROUP_HEARTBEAT`/`LEAVE_GROUP` RPCs.
 
-**Why:** Keeps the durability/replication centerpiece unblocked. Dynamic rebalancing
-is a stretch spec.
+**Why:** Keeps the durability/replication centerpiece unblocked first. Rebalancing was
+scoped as a stretch spec specifically so its scheduling and API-negotiation edge cases
+couldn't threaten the correctness centerpiece.
 
 ### 5. Storage: segment files + fsync + sparse mmap index
 
@@ -110,6 +115,18 @@ story. Dynamic membership is irrelevant to the correctness headline.
 ### 7. Build & tooling: Gradle Kotlin DSL, JUnit 5, JMH, Testcontainers, Docker Compose
 
 **Why:** Mainstream Java tooling that reviewers recognize.
+
+### 8. Consumer model: pull-based
+
+**Choice:** Consumers poll the broker for records at an offset they control
+(`POLL_REQ`/`POLL_RESP`), rather than the broker pushing records to consumers.
+
+**Why:** A pull-based consumer sets its own pace and never needs the broker to buffer
+per-consumer backlog for a slow reader — the broker just serves whatever offset is
+asked for, out of the same durable log every consumer reads from. It's also what makes
+replaying from an arbitrary committed offset (crash recovery, group rebalance, a
+consumer restarting from its last commit) a normal read path rather than a special
+case.
 
 ---
 
@@ -146,12 +163,20 @@ one automated test that tries to violate it.
 | 0x06      | COMMIT_OFFSET_RESP  | Broker→Client  |
 | 0x07      | METADATA_REQ        | Client→Broker  |
 | 0x08      | METADATA_RESP       | Broker→Client  |
+| 0x09      | FETCH_OFFSET_REQ    | Client→Broker  |
+| 0x0A      | FETCH_OFFSET_RESP   | Broker→Client  |
 | 0x10      | APPEND_ENTRIES_REQ  | Broker→Broker  |
 | 0x11      | APPEND_ENTRIES_RESP | Broker→Broker  |
 | 0x12      | REQUEST_VOTE_REQ    | Broker→Broker  |
 | 0x13      | REQUEST_VOTE_RESP   | Broker→Broker  |
 | 0x14      | HEARTBEAT_REQ       | Broker→Broker  |
 | 0x15      | HEARTBEAT_RESP      | Broker→Broker  |
+| 0x20      | JOIN_GROUP_REQ      | Client→Broker  |
+| 0x21      | JOIN_GROUP_RESP     | Broker→Client  |
+| 0x22      | GROUP_HEARTBEAT_REQ | Client→Broker  |
+| 0x23      | GROUP_HEARTBEAT_RESP| Broker→Client  |
+| 0x24      | LEAVE_GROUP_REQ     | Client→Broker  |
+| 0x25      | LEAVE_GROUP_RESP    | Broker→Client  |
 | 0xFF      | ERROR_RESP          | Broker→Client  |
 
 ---
@@ -193,3 +218,60 @@ client backs off exponentially on `BROKER_BUSY` responses.
 A: Measured in `docs/results.md`. The RF=3 overhead is the throughput delta from
 requiring two network round trips (leader → two followers) before committing, plus
 the latency added by the slowest of the two followers on the critical path.
+
+**Q: How does rebalancing work, and what does a consumer do mid-rebalance?**
+A: `GroupCoordinator` tracks each group's membership and triggers a rebalance on
+`JOIN_GROUP`, `LEAVE_GROUP`, or a missed `GROUP_HEARTBEAT` past
+`BROKER_GROUP_SESSION_TIMEOUT_MS`. When a rebalance starts, `RangeAssignor` recomputes
+a contiguous partition range per member from the current membership list and the
+coordinator hands each member its new assignment on its next heartbeat response. A
+consumer mid-rebalance keeps consuming its *old* assignment until it receives the new
+one — there is no "stop the world" barrier — so at most it processes a few extra
+records from a partition it's about to give up, which is safe because commits are
+idempotent per (group, topic, partition) offset, not because rebalancing is exactly
+synchronized.
+
+**Q: How does the idempotent producer tell a duplicate from a sequence gap?**
+A: `IdempotencyStore.check(producerId, seqNo)` compares the incoming `seqNo` against
+the last *committed* sequence for that producer (tracked per-partition, applied
+identically on every replica so a new leader has correct state instantly): exactly
+`lastSeq + 1` is a fresh append, `<= lastSeq` is a duplicate (the last one is
+answered with its cached offset so a client retrying a lost response gets the same
+offset back; older ones can't be re-answered), and anything higher is a gap — the
+client skipped a sequence number, which is a client bug, not a retry, and is rejected
+with `CODE_SEQUENCE_GAP` rather than silently accepted.
+
+**Q: What does the chaos harness actually inject, and what does each checker prove?**
+A: `FaultInjector` drives four real fault types against the Docker Compose cluster:
+`killLeader` (SIGKILL the current partition leader), `restart`, `partitionNetwork`
+(iptables DROP rules between two brokers), and `slowDisk` (recreates a broker's
+container with a real `BROKER_FSYNC_DELAY_MS`, since `tc` shapes network queues, not
+disk I/O). Every producer/consumer event is captured by `HistoryRecorder` and checked
+afterward: `LossChecker` proves INV-1 (every acked publish was received),
+`DuplicationChecker` proves INV-3 (no producer message occupies two offsets),
+`LinearizabilityChecker` proves INV-2 (a single valid total order explains what every
+consumer saw), and `DivergenceChecker` proves INV-5 (every replica's log agrees on
+committed data) by reading each replica's log directly.
+
+**Q: How do segments, the sparse index, and retention fit together?**
+A: Each partition's log is a sequence of `{base-offset:020d}.log` segment files, each
+paired with a `{base-offset:020d}.index` file mapping offset → byte position at a
+configurable stride rather than every record (sparse), so a read seeks to the nearest
+indexed entry and linear-scans a bounded distance from there. Every append can be
+followed by an `fsync` (`FsyncPolicy`) before the write is acknowledged as committed.
+Retention deletes whole old segments once they cross a size or time threshold —
+there is no log compaction, so a topic can't be used as a compacted key-value change
+log, only as a bounded-retention event stream.
+
+**Q: Why Raft per partition instead of Kafka's ISR + controller model?**
+A: One correctness story instead of two. ISR (in-sync replica set) plus a separate
+controller for leader election is Kafka's design and works, but it's effectively a
+hand-rolled, more ad-hoc consensus protocol layered under a cluster-wide controller
+election of its own. Raft is a single, provably-correct algorithm that gives leader
+election, log replication, and split-brain prevention (via terms/epochs) for free,
+per partition, with no separate controller election needed. That's why this project
+is framed as "a Kafka-style broker with Raft-replicated partitions" and never as
+"an implementation of Kafka's ISR/controller architecture" — the wire protocol and
+partition model are Kafka-like, but the replication core is a different, simpler
+algorithm chosen for the correctness guarantee, not a re-implementation of Kafka
+internals.
