@@ -16,7 +16,7 @@ class ClusterConfigTest {
 
   @Test
   void parsesBrokerList() {
-    ClusterConfig config = ClusterConfig.parse(BROKER_LIST, null, null, null, 1, defaultTopics());
+    ClusterConfig config = ClusterConfig.parse(BROKER_LIST, null, null, null, null, 1, defaultTopics());
 
     assertEquals(
         List.of(
@@ -28,7 +28,7 @@ class ClusterConfigTest {
 
   @Test
   void peersOfExcludesSelf() {
-    ClusterConfig config = ClusterConfig.parse(BROKER_LIST, null, null, null, 1, defaultTopics());
+    ClusterConfig config = ClusterConfig.parse(BROKER_LIST, null, null, null, null, 1, defaultTopics());
 
     List<Integer> peerIds = config.peersOf(1).stream().map(BrokerInfo::brokerId).toList();
 
@@ -37,7 +37,7 @@ class ClusterConfigTest {
 
   @Test
   void defaultsControllerToLowestBrokerId() {
-    ClusterConfig config = ClusterConfig.parse(BROKER_LIST, null, null, null, 2, defaultTopics());
+    ClusterConfig config = ClusterConfig.parse(BROKER_LIST, null, null, null, null, 2, defaultTopics());
 
     assertEquals(1, config.controllerId());
     assertTrue(config.isController(1));
@@ -46,7 +46,7 @@ class ClusterConfigTest {
 
   @Test
   void explicitControllerIdHonored() {
-    ClusterConfig config = ClusterConfig.parse(BROKER_LIST, null, null, 3, 1, defaultTopics());
+    ClusterConfig config = ClusterConfig.parse(BROKER_LIST, null, null, null, 3, 1, defaultTopics());
 
     assertEquals(3, config.controllerId());
   }
@@ -55,14 +55,14 @@ class ClusterConfigTest {
   void throwsWhenControllerIdNotListed() {
     assertThrows(
         IllegalStateException.class,
-        () -> ClusterConfig.parse(BROKER_LIST, null, null, 99, 1, defaultTopics()));
+        () -> ClusterConfig.parse(BROKER_LIST, null, null, null, 99, 1, defaultTopics()));
   }
 
   @Test
   void throwsWhenSelfBrokerIdNotInBrokerList() {
     assertThrows(
         IllegalStateException.class,
-        () -> ClusterConfig.parse(BROKER_LIST, null, null, null, 99, defaultTopics()));
+        () -> ClusterConfig.parse(BROKER_LIST, null, null, null, null, 99, defaultTopics()));
   }
 
   @Test
@@ -71,21 +71,21 @@ class ClusterConfigTest {
         IllegalStateException.class,
         () ->
             ClusterConfig.parse(
-                "1@broker-1:9092,1@broker-2:9093", null, null, null, 1, defaultTopics()));
+                "1@broker-1:9092,1@broker-2:9093", null, null, null, null, 1, defaultTopics()));
   }
 
   @Test
   void throwsOnMalformedBrokerListEntry() {
     assertThrows(
         IllegalStateException.class,
-        () -> ClusterConfig.parse("broker-1:9092", null, null, null, 1, defaultTopics()));
+        () -> ClusterConfig.parse("broker-1:9092", null, null, null, null, 1, defaultTopics()));
   }
 
   @Test
   void parsesPartitionAssignments() {
     TopicConfig topics = TopicConfig.parse("orders:2", 1);
     ClusterConfig config =
-        ClusterConfig.parse(BROKER_LIST, "orders:0=1,2,3;orders:1=2,3,1", 3, null, 1, topics);
+        ClusterConfig.parse(BROKER_LIST, null, "orders:0=1,2,3;orders:1=2,3,1", 3, null, 1, topics);
 
     Optional<ClusterConfig.PartitionAssignment> a0 =
         config.assignmentFor(new TopicPartition("orders", 0));
@@ -101,7 +101,7 @@ class ClusterConfigTest {
 
   @Test
   void assignmentForUnassignedPartitionIsEmpty() {
-    ClusterConfig config = ClusterConfig.parse(BROKER_LIST, null, null, null, 1, defaultTopics());
+    ClusterConfig config = ClusterConfig.parse(BROKER_LIST, null, null, null, null, 1, defaultTopics());
 
     assertTrue(config.assignmentFor(new TopicPartition("orders", 0)).isEmpty());
   }
@@ -111,7 +111,7 @@ class ClusterConfigTest {
     TopicConfig topics = TopicConfig.parse("orders:1", 1);
     assertThrows(
         IllegalStateException.class,
-        () -> ClusterConfig.parse(BROKER_LIST, "orders:0=1,2,3", 2, null, 1, topics));
+        () -> ClusterConfig.parse(BROKER_LIST, null, "orders:0=1,2,3", 2, null, 1, topics));
   }
 
   @Test
@@ -119,7 +119,7 @@ class ClusterConfigTest {
     TopicConfig topics = TopicConfig.parse("orders:1", 1);
     assertThrows(
         IllegalStateException.class,
-        () -> ClusterConfig.parse(BROKER_LIST, "orders:0=1,2,99", 3, null, 1, topics));
+        () -> ClusterConfig.parse(BROKER_LIST, null, "orders:0=1,2,99", 3, null, 1, topics));
   }
 
   @Test
@@ -127,7 +127,7 @@ class ClusterConfigTest {
     TopicConfig topics = TopicConfig.parse("orders:1", 1);
     assertThrows(
         IllegalStateException.class,
-        () -> ClusterConfig.parse(BROKER_LIST, "orders:5=1,2,3", 3, null, 1, topics));
+        () -> ClusterConfig.parse(BROKER_LIST, null, "orders:5=1,2,3", 3, null, 1, topics));
   }
 
   @Test
@@ -136,7 +136,7 @@ class ClusterConfigTest {
     assertThrows(
         IllegalStateException.class,
         () ->
-            ClusterConfig.parse(BROKER_LIST, "orders:0=1,2,3;orders:0=2,3,1", 3, null, 1, topics));
+            ClusterConfig.parse(BROKER_LIST, null, "orders:0=1,2,3;orders:0=2,3,1", 3, null, 1, topics));
   }
 
   @Test

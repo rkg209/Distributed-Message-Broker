@@ -74,9 +74,9 @@ public final class MetadataService {
     return self;
   }
 
-  /** Every broker in the static cluster configuration. */
+  /** Every broker in the static cluster configuration, at its client-reachable address. */
   public List<BrokerInfo> clusterBrokers() {
-    return clusterConfig.brokers();
+    return clusterConfig.advertisedBrokers();
   }
 
   /** Whether this broker is the static controller. */

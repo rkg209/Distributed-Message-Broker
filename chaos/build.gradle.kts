@@ -1,7 +1,6 @@
 sourceSets {
     create("chaosTest") {
         java.srcDir("src/chaosTest/java")
-        resources.srcDir("src/chaosTest/resources")
         compileClasspath += sourceSets.main.get().output
         runtimeClasspath += sourceSets.main.get().output
     }
@@ -19,16 +18,14 @@ dependencies {
     implementation(project(":protocol"))
 
     implementation("ch.qos.logback:logback-classic:1.5.12")
-    implementation("org.testcontainers:testcontainers:1.20.4")
+    implementation("org.testcontainers:testcontainers:2.0.5")
 
-    testImplementation("org.testcontainers:testcontainers:1.20.4")
-    testImplementation("org.testcontainers:junit-jupiter:1.20.4")
+    testImplementation("org.testcontainers:testcontainers:2.0.5")
 
     chaosTestImplementation(project(":client"))
     chaosTestImplementation(project(":protocol"))
     chaosTestImplementation("org.junit.jupiter:junit-jupiter:5.11.3")
-    chaosTestImplementation("org.testcontainers:testcontainers:1.20.4")
-    chaosTestImplementation("org.testcontainers:junit-jupiter:1.20.4")
+    chaosTestImplementation("org.testcontainers:testcontainers:2.0.5")
 }
 
 val chaosTest = tasks.register<Test>("chaosTest") {

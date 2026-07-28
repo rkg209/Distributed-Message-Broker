@@ -39,8 +39,7 @@ class ClusterFormationIT {
         new ComposeContainer(new File("../docker/docker-compose.yml"))
             .withExposedService("broker-1", 9092, Wait.forLogMessage(".*joined cluster.*\\n", 1))
             .withExposedService("broker-2", 9092, Wait.forLogMessage(".*joined cluster.*\\n", 1))
-            .withExposedService("broker-3", 9092, Wait.forLogMessage(".*joined cluster.*\\n", 1))
-            .withLocalCompose(true);
+            .withExposedService("broker-3", 9092, Wait.forLogMessage(".*joined cluster.*\\n", 1));
     environment.start();
   }
 

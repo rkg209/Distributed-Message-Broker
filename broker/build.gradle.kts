@@ -34,8 +34,7 @@ dependencies {
     integrationTestImplementation(project(":client"))
     integrationTestImplementation(project(":protocol"))
     integrationTestImplementation("org.junit.jupiter:junit-jupiter:5.11.3")
-    integrationTestImplementation("org.testcontainers:testcontainers:1.20.4")
-    integrationTestImplementation("org.testcontainers:junit-jupiter:1.20.4")
+    integrationTestImplementation("org.testcontainers:testcontainers:2.0.5")
 }
 
 val integrationTest = tasks.register<Test>("integrationTest") {

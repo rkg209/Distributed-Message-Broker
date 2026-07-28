@@ -165,6 +165,7 @@ final class TestCluster implements AutoCloseable {
     ClusterConfig clusterConfig =
         ClusterConfig.parse(
             brokerListSpec,
+            null,
             partitionAssignments,
             replicationFactor,
             null,

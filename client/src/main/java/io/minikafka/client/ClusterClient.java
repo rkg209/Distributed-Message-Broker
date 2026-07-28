@@ -8,7 +8,9 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
 
 /**
  * Tracks cluster metadata across a bootstrap connection and lazily opens one {@link
@@ -24,6 +26,8 @@ public final class ClusterClient implements AutoCloseable {
 
   private volatile List<BrokerInfo> brokers;
   private volatile List<TopicMetadata> topics;
+  private final Object refreshLock = new Object();
+  private CompletableFuture<Void> inFlightRefresh;
 
   public ClusterClient(String bootstrapHost, int bootstrapPort, int maxFrameBytes)
       throws IOException {
@@ -41,9 +45,60 @@ public final class ClusterClient implements AutoCloseable {
    * is what lets a client discover a new partition leader even when the broker it originally
    * bootstrapped from has died.
    *
+   * <p>Concurrent callers coalesce onto a single in-flight refresh rather than each doing their own
+   * serialized round of connection attempts: a producer/consumer pool sharing one {@code
+   * ClusterClient} (as the chaos harness and any multi-threaded client does) can have dozens of
+   * threads hit a stale leader at once after a failover, and running that many redundant refreshes
+   * back-to-back can exhaust each caller's retry budget before its turn even comes up. Every waiter
+   * gets the same outcome (success or failure) as the one refresh that actually ran.
+   *
    * @throws ProtocolException if no known broker is reachable
    */
-  public synchronized void refresh() throws IOException {
+  public void refresh() throws IOException {
+    CompletableFuture<Void> ongoing;
+    boolean leader;
+    synchronized (refreshLock) {
+      if (inFlightRefresh == null) {
+        inFlightRefresh = new CompletableFuture<>();
+        leader = true;
+      } else {
+        leader = false;
+      }
+      ongoing = inFlightRefresh;
+    }
+
+    if (!leader) {
+      try {
+        ongoing.get();
+        return;
+      } catch (ExecutionException e) {
+        throw toIOException(e.getCause());
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        throw new ProtocolException("Interrupted while waiting for cluster metadata refresh", e);
+      }
+    }
+
+    try {
+      doRefresh();
+      ongoing.complete(null);
+    } catch (IOException e) {
+      ongoing.completeExceptionally(e);
+      throw e;
+    } catch (RuntimeException | Error e) {
+      // Not just IOException: leave no coalesced waiter blocked forever on a future the leader
+      // never completes because it died from something unchecked (e.g. a malformed metadata
+      // frame tripping a parse exception).
+      ongoing.completeExceptionally(e);
+      throw e;
+    } finally {
+      synchronized (refreshLock) {
+        inFlightRefresh = null;
+      }
+    }
+  }
+
+  private void doRefresh() throws IOException {
     IOException lastError = null;
     for (BrokerInfo candidate : brokers) {
       try (BrokerConnection conn =
@@ -60,6 +115,13 @@ public final class ClusterClient implements AutoCloseable {
     }
     throw new ProtocolException(
         "No reachable broker among " + brokers + " during metadata refresh", lastError);
+  }
+
+  private static IOException toIOException(Throwable cause) {
+    if (cause instanceof IOException io) {
+      return io;
+    }
+    return new ProtocolException("Cluster metadata refresh failed", cause);
   }
 
   /** The current leader broker id for {@code topic}/{@code partition}. */
@@ -90,7 +152,8 @@ public final class ClusterClient implements AutoCloseable {
     return connectionTo(leaderFor(topic, partition));
   }
 
-  private BrokerConnection connectionTo(int brokerId) throws IOException {
+  /** An open connection to broker {@code brokerId}, pooled across calls. */
+  public BrokerConnection connectionTo(int brokerId) throws IOException {
     BrokerConnection existing = connections.get(brokerId);
     if (existing != null) {
       return existing;
@@ -103,6 +166,24 @@ public final class ClusterClient implements AutoCloseable {
     BrokerConnection created = new BrokerConnection(info.host(), info.port(), maxFrameBytes);
     connections.put(brokerId, created);
     return created;
+  }
+
+  /**
+   * Closes and forgets the pooled connection to {@code brokerId}, if any, so the next {@link
+   * #connectionFor} opens a fresh one. Callers must do this after any {@link IOException} on a
+   * request over that connection: a read timeout in particular leaves the socket open with a
+   * stale, unread response still buffered for a prior correlation id, and reusing it would corrupt
+   * every subsequent exchange on that connection with a correlation-id mismatch.
+   */
+  public void evict(int brokerId) {
+    BrokerConnection removed = connections.remove(brokerId);
+    if (removed != null) {
+      try {
+        removed.close();
+      } catch (IOException ignored) {
+        // best-effort close of a connection we're discarding anyway
+      }
+    }
   }
 
   private PartitionMetadata partitionMetadata(String topic, int partition) throws IOException {

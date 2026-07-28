@@ -10,9 +10,14 @@
 
 | Run | Date | Crashes Injected | Messages | Loss | Duplication | Linearizability | Divergence | Result |
 |-----|------|-----------------|----------|------|-------------|-----------------|------------|--------|
-| — | — | — | — | — | — | — | — | PENDING |
+| 1 | 2026-07-28 | 4 | 999 | 0 | 0 | PASS | PASS | PASS |
 
-**Headline target:** 0 loss / 0 duplication across ~1,000 crashes / ~10M messages.
+**Headline target:** 0 loss / 0 duplication across ~1,000 crashes / ~10M messages. The run above is
+at validated (not headline) scale — the full `-Pcrashes=1000` run over ~10M messages has not yet
+been executed and is a follow-up, not part of Spec 11's close-out. `DiskSlownessChaosTest` (AC-3:
+non-zero `BROKER_FSYNC_DELAY_MS` on the leader) and `RandomizedScheduleChaosTest` (AC-4: 10
+randomized seeds) both pass but aren't captured by this table's columns; see
+`chaos/build/test-results/chaosTest/` for their per-run JUnit XML.
 
 ---
 
@@ -58,7 +63,7 @@ as part of `./gradlew test`.
 
 | Run | Date | Partitions Injected | Split-brain Events | Result |
 |-----|------|--------------------|--------------------|--------|
-| — | — | — | — | PENDING |
+| 1 | 2026-07-28 | 1 | 0 | PASS |
 
 ---
 
@@ -77,7 +82,7 @@ as part of `./gradlew test`.
 | 08 | Leader Failover & Epoch Fencing | done | 2026-07-27 |
 | 09 | Idempotent Producer | done | 2026-07-27 |
 | 10 | Backpressure & Flow Control | done | 2026-07-27 |
-| 11 | Chaos Harness & Linearizability | todo | — |
+| 11 | Chaos Harness & Linearizability | done | 2026-07-28 |
 | 12 | Benchmarks | todo | — |
 | 13 | Dynamic Rebalancing (STRETCH) | stretch | — |
 | 14 | Demo & Polish | stretch | — |

@@ -58,6 +58,7 @@ public record BrokerConfig(
   private static final String BROKER_DEFAULT_PARTITIONS = "BROKER_DEFAULT_PARTITIONS";
   private static final String BROKER_OFFSET_DIR = "BROKER_OFFSET_DIR";
   private static final String BROKER_LIST = "BROKER_LIST";
+  private static final String ADVERTISED_LIST = "ADVERTISED_LIST";
   private static final String PARTITION_ASSIGNMENTS = "PARTITION_ASSIGNMENTS";
   private static final String REPLICATION_FACTOR = "REPLICATION_FACTOR";
   private static final String CONTROLLER_ID = "CONTROLLER_ID";
@@ -127,6 +128,7 @@ public record BrokerConfig(
       clusterConfig =
           ClusterConfig.parse(
               brokerListSpec,
+              env.apply(ADVERTISED_LIST),
               env.apply(PARTITION_ASSIGNMENTS),
               replicationFactor,
               controllerId,

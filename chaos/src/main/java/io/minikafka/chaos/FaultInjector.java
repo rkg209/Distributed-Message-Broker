@@ -89,6 +89,8 @@ public final class FaultInjector {
             + "\"\n";
     Files.writeString(override, yaml, StandardCharsets.UTF_8);
     runCompose(
+        "-p",
+        cluster.composeProjectOf(brokerId),
         "-f",
         "docker-compose.yml",
         "-f",

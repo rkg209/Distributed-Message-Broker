@@ -3,6 +3,7 @@ package io.minikafka.chaos;
 import io.minikafka.client.BrokerBusyException;
 import io.minikafka.client.ClusterClient;
 import io.minikafka.client.ConsumerClient;
+import io.minikafka.client.PartitionRouter;
 import io.minikafka.client.ProducerClient;
 import io.minikafka.client.SequenceGapException;
 import io.minikafka.protocol.PollResp;
@@ -29,6 +30,15 @@ public final class ChaosOrchestrator {
 
   private static final String GROUP = "chaos-group";
   private static final int PAYLOAD_PADDING_BYTES = 64;
+
+  // ProducerClient/ConsumerClient's own DEFAULT_MAX_RETRIES (5) / DEFAULT_RETRY_BACKOFF_MS (100)
+  // budget ~0.5-1s of redirect retries — enough for a fast in-process failover test, but a chaos
+  // run's faults are real `docker kill`/container-recreate events: the replacement container needs
+  // real wall-clock time to start, rejoin, and (if it was leader) lose an election to a peer before
+  // any client can succeed again. Every producer/consumer thread in a run redirects through the same
+  // disruption window, so the budget here is sized for that, not for a single client's failover.
+  private static final int REDIRECT_MAX_RETRIES = 30;
+  private static final long REDIRECT_BACKOFF_MS = 200;
 
   private final ChaosConfig config;
   private final ClusterClient bootstrapClient;
@@ -113,7 +123,9 @@ public final class ChaosOrchestrator {
 
   private void runProducer(long count, CountDownLatch latch) {
     try {
-      ProducerClient producer = new ProducerClient(bootstrapClient);
+      ProducerClient producer =
+          new ProducerClient(
+              bootstrapClient, new PartitionRouter(), REDIRECT_MAX_RETRIES, REDIRECT_BACKOFF_MS);
       long producerId = producer.hashCode() & 0xFFFFFFFFL;
       Random random = new Random(config.seed() ^ Thread.currentThread().threadId());
       for (long i = 0; i < count; i++) {
@@ -162,7 +174,13 @@ public final class ChaosOrchestrator {
   private void runConsumer(int partition, AtomicBoolean stop, CountDownLatch started) {
     try {
       ConsumerClient consumer =
-          new ConsumerClient(bootstrapClient, config.topic(), partition, GROUP);
+          new ConsumerClient(
+              bootstrapClient,
+              config.topic(),
+              partition,
+              GROUP,
+              REDIRECT_MAX_RETRIES,
+              REDIRECT_BACKOFF_MS);
       started.countDown();
       String consumerId = "consumer-" + partition;
       long lastCommitNanos = System.nanoTime();

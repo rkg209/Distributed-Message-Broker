@@ -10,11 +10,12 @@ x-broker-common: &broker-common
     - mini-kafka
   environment: &broker-common-env
     BROKER_PORT: "9092"
-    BROKER_TOPICS: "orders:3"
+    BROKER_TOPICS: "orders:3,chaos:3"
     BROKER_LIST: "1@broker-1:9092,2@broker-2:9092,3@broker-3:9092"
+    ADVERTISED_LIST: "1@localhost:9092,2@localhost:9093,3@localhost:9094"
     REPLICATION_FACTOR: "3"
     CONTROLLER_ID: "1"
-    PARTITION_ASSIGNMENTS: "orders:0=1,2,3;orders:1=2,3,1;orders:2=3,1,2"
+    PARTITION_ASSIGNMENTS: "orders:0=1,2,3;orders:1=2,3,1;orders:2=3,1,2;chaos:0=1,2,3;chaos:1=2,3,1;chaos:2=3,1,2"
     BROKER_HEARTBEAT_INTERVAL_MS: "250"
     BROKER_HEARTBEAT_TIMEOUT_MS: "1000"
     BROKER_PUBLISH_QUEUE_CAPACITY: "1000"

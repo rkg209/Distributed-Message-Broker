@@ -6,13 +6,23 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Static cluster membership and partition assignment, parsed from environment variables.
  *
  * <p>{@code BROKER_LIST} — {@code id@host:port} pairs, comma-separated, e.g. {@code
  * "1@broker-1:9092,2@broker-2:9092,3@broker-3:9092"}. Must include the broker's own {@code
- * BROKER_ID}.
+ * BROKER_ID}. Used for internal Raft/heartbeat peer connections ({@link #peersOf}).
+ *
+ * <p>{@code ADVERTISED_LIST} — same {@code id@host:port} format, optional. What's handed back to
+ * clients as the broker roster ({@link #advertisedBrokers}), so a partition leader lookup can be
+ * dialed. Separate from {@code BROKER_LIST} because clients in this project run on the Docker
+ * host, not inside the compose network, so they need a host-reachable address (e.g. {@code
+ * localhost:9093}) while brokers still address each other by container hostname. Defaults to
+ * {@code BROKER_LIST} verbatim when unset, so unset behaves exactly as before this existed. Must
+ * name the same broker ids as {@code BROKER_LIST}.
  *
  * <p>{@code PARTITION_ASSIGNMENTS} — {@code topic:partition=leaderId,replicaId...}, entries
  * separated by {@code ;}, e.g. {@code "orders:0=1,2,3;orders:1=2,3,1"}. The first id after {@code
@@ -26,6 +36,7 @@ import java.util.Optional;
  */
 public record ClusterConfig(
     List<BrokerInfo> brokers,
+    List<BrokerInfo> advertisedBrokers,
     Map<TopicPartition, PartitionAssignment> assignments,
     int replicationFactor,
     int controllerId) {
@@ -34,10 +45,14 @@ public record ClusterConfig(
     if (brokers == null) {
       throw new IllegalArgumentException("brokers must not be null");
     }
+    if (advertisedBrokers == null) {
+      throw new IllegalArgumentException("advertisedBrokers must not be null");
+    }
     if (assignments == null) {
       throw new IllegalArgumentException("assignments must not be null");
     }
     brokers = List.copyOf(brokers);
+    advertisedBrokers = List.copyOf(advertisedBrokers);
     assignments = Map.copyOf(assignments);
   }
 
@@ -74,7 +89,7 @@ public record ClusterConfig(
 
   /** A degenerate single-broker cluster: used when {@code BROKER_LIST} is unset. */
   public static ClusterConfig singleBroker(BrokerInfo self) {
-    return new ClusterConfig(List.of(self), Map.of(), 1, self.brokerId());
+    return new ClusterConfig(List.of(self), List.of(self), Map.of(), 1, self.brokerId());
   }
 
   /**
@@ -84,16 +99,28 @@ public record ClusterConfig(
    */
   public static ClusterConfig parse(
       String brokerListSpec,
+      String advertisedListSpec,
       String assignmentsSpec,
       Integer replicationFactor,
       Integer controllerId,
       int selfBrokerId,
       TopicConfig topicConfig) {
-    List<BrokerInfo> brokers = parseBrokerList(brokerListSpec);
+    List<BrokerInfo> brokers = parseBrokerList(brokerListSpec, "BROKER_LIST");
+    List<BrokerInfo> advertisedBrokers =
+        (advertisedListSpec == null || advertisedListSpec.isBlank())
+            ? brokers
+            : parseBrokerList(advertisedListSpec, "ADVERTISED_LIST");
 
     if (brokers.stream().noneMatch(b -> b.brokerId() == selfBrokerId)) {
       throw new IllegalStateException(
           "BROKER_ID " + selfBrokerId + " is not present in BROKER_LIST");
+    }
+    Set<Integer> brokerIds = brokers.stream().map(BrokerInfo::brokerId).collect(Collectors.toSet());
+    Set<Integer> advertisedIds =
+        advertisedBrokers.stream().map(BrokerInfo::brokerId).collect(Collectors.toSet());
+    if (!brokerIds.equals(advertisedIds)) {
+      throw new IllegalStateException(
+          "ADVERTISED_LIST broker ids " + advertisedIds + " do not match BROKER_LIST ids " + brokerIds);
     }
 
     int factor = replicationFactor == null ? 1 : replicationFactor;
@@ -119,12 +146,12 @@ public record ClusterConfig(
     Map<TopicPartition, PartitionAssignment> assignments =
         parseAssignments(assignmentsSpec, brokers, factor, topicConfig);
 
-    return new ClusterConfig(brokers, assignments, factor, resolvedController);
+    return new ClusterConfig(brokers, advertisedBrokers, assignments, factor, resolvedController);
   }
 
-  private static List<BrokerInfo> parseBrokerList(String spec) {
+  private static List<BrokerInfo> parseBrokerList(String spec, String varName) {
     if (spec == null || spec.isBlank()) {
-      throw new IllegalStateException("BROKER_LIST must not be blank");
+      throw new IllegalStateException(varName + " must not be blank");
     }
     List<BrokerInfo> brokers = new ArrayList<>();
     for (String entry : spec.split(",")) {
@@ -136,20 +163,20 @@ public record ClusterConfig(
       int colon = trimmed.lastIndexOf(':');
       if (at <= 0 || colon <= at + 1 || colon == trimmed.length() - 1) {
         throw new IllegalStateException(
-            "Malformed BROKER_LIST entry (expected id@host:port): " + trimmed);
+            "Malformed " + varName + " entry (expected id@host:port): " + trimmed);
       }
       int id;
       int port;
       try {
         id = Integer.parseInt(trimmed.substring(0, at));
       } catch (NumberFormatException e) {
-        throw new IllegalStateException("Malformed BROKER_LIST broker id: " + trimmed, e);
+        throw new IllegalStateException("Malformed " + varName + " broker id: " + trimmed, e);
       }
       String host = trimmed.substring(at + 1, colon);
       try {
         port = Integer.parseInt(trimmed.substring(colon + 1));
       } catch (NumberFormatException e) {
-        throw new IllegalStateException("Malformed BROKER_LIST port: " + trimmed, e);
+        throw new IllegalStateException("Malformed " + varName + " port: " + trimmed, e);
       }
       brokers.add(new BrokerInfo(id, host, port));
     }
@@ -160,7 +187,7 @@ public record ClusterConfig(
     counts.forEach(
         (id, count) -> {
           if (count > 1) {
-            throw new IllegalStateException("Duplicate broker id in BROKER_LIST: " + id);
+            throw new IllegalStateException("Duplicate broker id in " + varName + ": " + id);
           }
         });
     return brokers;

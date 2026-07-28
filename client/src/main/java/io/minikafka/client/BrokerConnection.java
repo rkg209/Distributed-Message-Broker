@@ -23,6 +23,16 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 public final class BrokerConnection implements AutoCloseable {
 
+  /**
+   * Default bound on both the TCP connect and every blocking socket read. Without this, a broker
+   * that goes silent mid-response (killed, partitioned, or just slow) leaves {@link #request}
+   * blocked forever — no retry/redirect budget in {@link ProducerClient}, {@link ConsumerClient},
+   * or {@link RedirectingCall} can rescue a caller stuck inside a single unbounded read. Sized well
+   * above any realistic broker response time in this project (worst case is a slow-disk fsync
+   * fault plus backpressure queuing, on the order of seconds, not tens of seconds).
+   */
+  public static final int DEFAULT_SOCKET_TIMEOUT_MS = 15_000;
+
   private final Socket socket;
   private final FrameEncoder encoder;
   private final FrameDecoder decoder;
@@ -30,8 +40,14 @@ public final class BrokerConnection implements AutoCloseable {
   private final AtomicLong correlationCounter = new AtomicLong();
 
   public BrokerConnection(String host, int port, int maxFrameBytes) throws IOException {
+    this(host, port, maxFrameBytes, DEFAULT_SOCKET_TIMEOUT_MS);
+  }
+
+  public BrokerConnection(String host, int port, int maxFrameBytes, int socketTimeoutMs)
+      throws IOException {
     this.socket = new Socket();
-    this.socket.connect(new InetSocketAddress(host, port));
+    this.socket.connect(new InetSocketAddress(host, port), socketTimeoutMs);
+    this.socket.setSoTimeout(socketTimeoutMs);
     this.encoder = new FrameEncoder(new BufferedOutputStream(socket.getOutputStream()));
     this.decoder =
         new FrameDecoder(new BufferedInputStream(socket.getInputStream()), maxFrameBytes);

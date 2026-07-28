@@ -52,8 +52,9 @@ final class RedirectingCall {
   Message send(Request request) throws IOException {
     Exception lastError = null;
     for (int attempt = 0; attempt <= maxRetries; attempt++) {
+      int leaderId = clusterClient.leaderFor(topic, partition);
       try {
-        BrokerConnection conn = clusterClient.connectionFor(topic, partition);
+        BrokerConnection conn = clusterClient.connectionTo(leaderId);
         Message response = request.send(conn);
         if (response instanceof ErrorResp err && err.errorCode() == ErrorResp.CODE_NOT_LEADER) {
           lastError = new ProtocolException("Not leader for " + topic + "/" + partition);
@@ -62,6 +63,10 @@ final class RedirectingCall {
         }
         return response;
       } catch (IOException e) {
+        // The connection may be left with a stale buffered response (a timed-out read) or be
+        // outright broken (the leader crashed) — either way it must not be handed back to the
+        // next attempt or a later caller.
+        clusterClient.evict(leaderId);
         lastError = e;
         redirectAndBackoff();
       }
