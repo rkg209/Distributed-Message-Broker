@@ -65,6 +65,7 @@ class EpochFencingTest {
             survivor.metadataService(),
             survivor.partitionManager(),
             survivor.consumerGroupManager(),
+            survivor.groupCoordinator(),
             1024 * 1024);
 
     AppendEntriesReq staleReq =

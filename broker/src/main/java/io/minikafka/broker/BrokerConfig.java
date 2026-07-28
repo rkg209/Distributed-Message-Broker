@@ -40,7 +40,10 @@ public record BrokerConfig(
     long raftLeaderWaitMs,
     int publishQueueCapacity,
     long publishAcquireTimeoutMs,
-    long fsyncDelayMs) {
+    long fsyncDelayMs,
+    long groupSessionTimeoutMs,
+    long groupRebalanceTimeoutMs,
+    long groupHeartbeatIntervalMs) {
 
   private static final String BROKER_ID = "BROKER_ID";
   private static final String BROKER_HOST = "BROKER_HOST";
@@ -76,6 +79,11 @@ public record BrokerConfig(
   private static final String BROKER_PUBLISH_ACQUIRE_TIMEOUT_MS =
       "BROKER_PUBLISH_ACQUIRE_TIMEOUT_MS";
   private static final String BROKER_FSYNC_DELAY_MS = "BROKER_FSYNC_DELAY_MS";
+  private static final String BROKER_GROUP_SESSION_TIMEOUT_MS = "BROKER_GROUP_SESSION_TIMEOUT_MS";
+  private static final String BROKER_GROUP_REBALANCE_TIMEOUT_MS =
+      "BROKER_GROUP_REBALANCE_TIMEOUT_MS";
+  private static final String BROKER_GROUP_HEARTBEAT_INTERVAL_MS =
+      "BROKER_GROUP_HEARTBEAT_INTERVAL_MS";
   private static final int DEFAULT_MAX_POLL_BYTES = 1024 * 1024;
   private static final int DEFAULT_PARTITIONS = 1;
   private static final String DEFAULT_OFFSET_SUBDIR = "__offsets";
@@ -86,6 +94,9 @@ public record BrokerConfig(
   private static final long DEFAULT_RAFT_LEADER_WAIT_MS = 2000;
   private static final int DEFAULT_PUBLISH_QUEUE_CAPACITY = 1000;
   private static final long DEFAULT_PUBLISH_ACQUIRE_TIMEOUT_MS = 100;
+  private static final long DEFAULT_GROUP_SESSION_TIMEOUT_MS = 10_000;
+  private static final long DEFAULT_GROUP_REBALANCE_TIMEOUT_MS = 5_000;
+  private static final long DEFAULT_GROUP_HEARTBEAT_INTERVAL_MS = 3_000;
 
   /**
    * Loads configuration from environment variables. Throws if a required variable is missing or
@@ -159,6 +170,12 @@ public record BrokerConfig(
     long publishAcquireTimeoutMs =
         optionalLong(env, BROKER_PUBLISH_ACQUIRE_TIMEOUT_MS, DEFAULT_PUBLISH_ACQUIRE_TIMEOUT_MS);
     long fsyncDelayMs = optionalLong(env, BROKER_FSYNC_DELAY_MS, LogConfig.DEFAULT_FSYNC_DELAY_MS);
+    long groupSessionTimeoutMs =
+        optionalLong(env, BROKER_GROUP_SESSION_TIMEOUT_MS, DEFAULT_GROUP_SESSION_TIMEOUT_MS);
+    long groupRebalanceTimeoutMs =
+        optionalLong(env, BROKER_GROUP_REBALANCE_TIMEOUT_MS, DEFAULT_GROUP_REBALANCE_TIMEOUT_MS);
+    long groupHeartbeatIntervalMs =
+        optionalLong(env, BROKER_GROUP_HEARTBEAT_INTERVAL_MS, DEFAULT_GROUP_HEARTBEAT_INTERVAL_MS);
 
     return new BrokerConfig(
         brokerId,
@@ -188,7 +205,10 @@ public record BrokerConfig(
         raftLeaderWaitMs,
         publishQueueCapacity,
         publishAcquireTimeoutMs,
-        fsyncDelayMs);
+        fsyncDelayMs,
+        groupSessionTimeoutMs,
+        groupRebalanceTimeoutMs,
+        groupHeartbeatIntervalMs);
   }
 
   private static FsyncPolicy parseFsyncPolicy(String value) {

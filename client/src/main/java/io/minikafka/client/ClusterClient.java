@@ -129,6 +129,15 @@ public final class ClusterClient implements AutoCloseable {
     return partitionMetadata(topic, partition).leaderId();
   }
 
+  /**
+   * Every broker id known from the last metadata fetch/refresh — used by {@link CoordinatorCall} to
+   * pick an initial broker to try before it learns the actual group coordinator (the static
+   * controller) from a {@code CODE_NOT_COORDINATOR} redirect.
+   */
+  public List<Integer> brokerIds() {
+    return brokers.stream().map(BrokerInfo::brokerId).toList();
+  }
+
   /** The partition count for {@code topic}, refreshing metadata once on a cache miss. */
   public synchronized int partitionCountFor(String topic) throws IOException {
     Optional<Integer> cached = findPartitionCount(topic);

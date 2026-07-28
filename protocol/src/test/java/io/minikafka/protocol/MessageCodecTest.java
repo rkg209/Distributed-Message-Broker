@@ -58,7 +58,13 @@ class MessageCodecTest {
         new HeartbeatResp(14L, 7L),
         new ErrorResp(15L, ErrorResp.CODE_PROTOCOL_ERROR, "bad frame"),
         new FetchOffsetReq(16L, "group-a", "orders", 3),
-        new FetchOffsetResp(17L, 99L));
+        new FetchOffsetResp(17L, 99L),
+        new JoinGroupReq(18L, "group-a", "", "orders"),
+        new JoinGroupResp(19L, "member-1", 3, 3_000L, 10_000L),
+        new GroupHeartbeatReq(20L, "group-a", "member-1", 3),
+        new GroupHeartbeatResp(21L, GroupHeartbeatResp.OK, 3, List.of(0, 1)),
+        new LeaveGroupReq(22L, "group-a", "member-1"),
+        new LeaveGroupResp(23L, true));
   }
 
   @ParameterizedTest
@@ -138,6 +144,13 @@ class MessageCodecTest {
                 new AppendEntriesReq.Entry(3L, 7L, new byte[] {4}),
                 new AppendEntriesReq.Entry(3L, 8L, new byte[0])),
             6L);
+    assertEquals(original, codec.decode(codec.encode(original)));
+  }
+
+  @Test
+  void groupHeartbeatRespWithEmptyAssignmentRoundTrips() throws ProtocolException {
+    GroupHeartbeatResp original =
+        new GroupHeartbeatResp(1L, GroupHeartbeatResp.REBALANCE_IN_PROGRESS, 2, List.of());
     assertEquals(original, codec.decode(codec.encode(original)));
   }
 

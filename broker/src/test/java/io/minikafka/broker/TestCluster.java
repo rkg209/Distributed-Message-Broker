@@ -29,6 +29,9 @@ final class TestCluster implements AutoCloseable {
   static final long DEFAULT_RAFT_LEADER_WAIT_MS = 3000;
   static final int DEFAULT_PUBLISH_QUEUE_CAPACITY = 1000;
   static final long DEFAULT_PUBLISH_ACQUIRE_TIMEOUT_MS = 100;
+  static final long DEFAULT_GROUP_HEARTBEAT_INTERVAL_MS = 100;
+  static final long DEFAULT_GROUP_SESSION_TIMEOUT_MS = 1000;
+  static final long DEFAULT_GROUP_REBALANCE_TIMEOUT_MS = 500;
 
   record BrokerNode(
       BrokerInfo info,
@@ -36,7 +39,8 @@ final class TestCluster implements AutoCloseable {
       MetadataService metadataService,
       HeartbeatMonitor heartbeatMonitor,
       PartitionManager partitionManager,
-      ConsumerGroupManager consumerGroupManager) {}
+      ConsumerGroupManager consumerGroupManager,
+      GroupCoordinator groupCoordinator) {}
 
   private final List<BrokerNode> nodes;
   private final java.util.Set<Integer> killed = java.util.concurrent.ConcurrentHashMap.newKeySet();
@@ -193,9 +197,16 @@ final class TestCluster implements AutoCloseable {
     metadataService.attachPartitionManager(partitionManager);
     ConsumerGroupManager consumerGroupManager =
         new ConsumerGroupManager(brokerDir.resolve("offsets"));
+    GroupCoordinator groupCoordinator =
+        new GroupCoordinator(
+            metadataService,
+            brokerConfig.groupHeartbeatIntervalMs(),
+            brokerConfig.groupSessionTimeoutMs(),
+            brokerConfig.groupRebalanceTimeoutMs());
+    groupCoordinator.start();
     BrokerRequestHandler handler =
         new BrokerRequestHandler(
-            metadataService, partitionManager, consumerGroupManager, 1024 * 1024);
+            metadataService, partitionManager, consumerGroupManager, groupCoordinator, 1024 * 1024);
     ConnectionAcceptor acceptor =
         new ConnectionAcceptor(self.port(), ProtocolConfig.DEFAULT_MAX_FRAME_BYTES, handler);
     acceptor.start();
@@ -209,7 +220,13 @@ final class TestCluster implements AutoCloseable {
     heartbeatMonitor.start();
     partitionManager.start();
     return new BrokerNode(
-        self, acceptor, metadataService, heartbeatMonitor, partitionManager, consumerGroupManager);
+        self,
+        acceptor,
+        metadataService,
+        heartbeatMonitor,
+        partitionManager,
+        consumerGroupManager,
+        groupCoordinator);
   }
 
   private static BrokerConfig testBrokerConfig(
@@ -250,7 +267,10 @@ final class TestCluster implements AutoCloseable {
         DEFAULT_RAFT_LEADER_WAIT_MS,
         publishQueueCapacity,
         publishAcquireTimeoutMs,
-        LogConfig.DEFAULT_FSYNC_DELAY_MS);
+        LogConfig.DEFAULT_FSYNC_DELAY_MS,
+        DEFAULT_GROUP_SESSION_TIMEOUT_MS,
+        DEFAULT_GROUP_REBALANCE_TIMEOUT_MS,
+        DEFAULT_GROUP_HEARTBEAT_INTERVAL_MS);
   }
 
   private static List<BrokerInfo> reservePorts(int brokerCount) throws IOException {
@@ -340,6 +360,7 @@ final class TestCluster implements AutoCloseable {
                 node.metadataService(),
                 node.partitionManager(),
                 node.consumerGroupManager(),
+                node.groupCoordinator(),
                 1024 * 1024));
     acceptor.start();
     int index = nodes.indexOf(node);
@@ -351,7 +372,8 @@ final class TestCluster implements AutoCloseable {
             node.metadataService(),
             node.heartbeatMonitor(),
             node.partitionManager(),
-            node.consumerGroupManager()));
+            node.consumerGroupManager(),
+            node.groupCoordinator()));
   }
 
   /**
@@ -364,6 +386,7 @@ final class TestCluster implements AutoCloseable {
   void restartBroker(int brokerId) throws IOException {
     BrokerNode node = node(brokerId);
     node.consumerGroupManager().close();
+    node.groupCoordinator().close();
     BrokerNode restarted =
         startNode(
             node.info(),
@@ -387,12 +410,14 @@ final class TestCluster implements AutoCloseable {
     for (BrokerNode node : nodes) {
       if (killed.contains(node.info().brokerId())) {
         node.consumerGroupManager().close();
+        node.groupCoordinator().close();
         continue;
       }
       node.heartbeatMonitor().close();
       node.acceptor().close();
       node.partitionManager().close();
       node.consumerGroupManager().close();
+      node.groupCoordinator().close();
     }
   }
 }

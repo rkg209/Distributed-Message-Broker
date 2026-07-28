@@ -84,6 +84,11 @@ public final class MetadataService {
     return clusterConfig.isController(self.brokerId());
   }
 
+  /** The broker id of the static controller, for {@code CODE_NOT_COORDINATOR} redirects. */
+  public int controllerId() {
+    return clusterConfig.controllerId();
+  }
+
   /**
    * Describes every known topic and its partitions, with leader/replicas resolved from {@link
    * ClusterConfig}; an unassigned partition defaults to this broker as sole leader and replica.

@@ -26,6 +26,12 @@ public sealed interface Message
         RequestVoteResp,
         HeartbeatReq,
         HeartbeatResp,
+        JoinGroupReq,
+        JoinGroupResp,
+        GroupHeartbeatReq,
+        GroupHeartbeatResp,
+        LeaveGroupReq,
+        LeaveGroupResp,
         ErrorResp {
 
   /** The wire type of this message. */

@@ -30,9 +30,20 @@ public final class Main {
             tp -> new DiskPartitionLog(config.logConfigFor(tp)));
     metadataService.attachPartitionManager(partitionManager);
     ConsumerGroupManager consumerGroupManager = new ConsumerGroupManager(config.offsetDirPath());
+    GroupCoordinator groupCoordinator =
+        new GroupCoordinator(
+            metadataService,
+            config.groupHeartbeatIntervalMs(),
+            config.groupSessionTimeoutMs(),
+            config.groupRebalanceTimeoutMs());
+    groupCoordinator.start();
     BrokerRequestHandler handler =
         new BrokerRequestHandler(
-            metadataService, partitionManager, consumerGroupManager, config.maxPollBytes());
+            metadataService,
+            partitionManager,
+            consumerGroupManager,
+            groupCoordinator,
+            config.maxPollBytes());
 
     ConnectionAcceptor acceptor =
         new ConnectionAcceptor(config.brokerPort(), config.maxFrameBytes(), handler);
@@ -70,6 +81,7 @@ public final class Main {
                   acceptor.close();
                   partitionManager.close();
                   consumerGroupManager.close();
+                  groupCoordinator.close();
                 },
                 "broker-shutdown"));
     Thread.currentThread().join();

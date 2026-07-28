@@ -21,6 +21,12 @@ public enum MessageType {
   REQUEST_VOTE_RESP(0x13),
   HEARTBEAT_REQ(0x14),
   HEARTBEAT_RESP(0x15),
+  JOIN_GROUP_REQ(0x20),
+  JOIN_GROUP_RESP(0x21),
+  GROUP_HEARTBEAT_REQ(0x22),
+  GROUP_HEARTBEAT_RESP(0x23),
+  LEAVE_GROUP_REQ(0x24),
+  LEAVE_GROUP_RESP(0x25),
   ERROR_RESP(0xFF);
 
   private static final MessageType[] BY_CODE = new MessageType[256];

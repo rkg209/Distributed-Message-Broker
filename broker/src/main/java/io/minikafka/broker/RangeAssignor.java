@@ -1,23 +1,20 @@
-package io.minikafka.client;
+package io.minikafka.broker;
 
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Static (non-rebalancing) partition-to-consumer assignment: contiguous ranges of partitions, with
- * any remainder spread one-per-member over the first members. Every partition is assigned to
- * exactly one member.
- *
- * <p>The broker-side {@code GroupCoordinator} needs the identical algorithm for dynamic rebalancing
- * but cannot depend on this module (the module map forbids {@code broker -> client}), so it is
- * duplicated verbatim as {@code broker/RangeAssignor}. Keep the two in lockstep.
+ * Contiguous-range partition assignment: base count plus remainder spread one-per-member over the
+ * first members. Deliberately duplicated from {@code client/StaticAssignor} rather than shared —
+ * the module map forbids {@code broker -> client}, and {@code protocol} is value-types-and-codec
+ * only — so keep the two algorithms in lockstep if either changes.
  */
-public final class StaticAssignor {
+final class RangeAssignor {
 
-  private StaticAssignor() {}
+  private RangeAssignor() {}
 
   /** The partitions assigned to member {@code memberIndex} of {@code memberCount} members. */
-  public static List<Integer> assign(int memberIndex, int memberCount, int partitionCount) {
+  static List<Integer> assign(int memberIndex, int memberCount, int partitionCount) {
     if (memberCount <= 0) {
       throw new IllegalArgumentException("memberCount must be positive: " + memberCount);
     }

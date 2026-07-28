@@ -54,7 +54,11 @@ class PartitionOrderingTest {
     consumerGroupManager = new ConsumerGroupManager(tempDir.resolve("offsets"));
     BrokerRequestHandler handler =
         new BrokerRequestHandler(
-            metadataService, partitionManager, consumerGroupManager, 4 * 1024 * 1024);
+            metadataService,
+            partitionManager,
+            consumerGroupManager,
+            new GroupCoordinator(metadataService, 3_000, 10_000, 5_000),
+            4 * 1024 * 1024);
     acceptor = new ConnectionAcceptor(0, ProtocolConfig.DEFAULT_MAX_FRAME_BYTES, handler);
     acceptor.start();
   }

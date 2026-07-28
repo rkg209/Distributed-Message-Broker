@@ -10,8 +10,11 @@ import io.minikafka.protocol.CommitOffsetResp;
 import io.minikafka.protocol.ErrorResp;
 import io.minikafka.protocol.FetchOffsetReq;
 import io.minikafka.protocol.FetchOffsetResp;
+import io.minikafka.protocol.GroupHeartbeatReq;
 import io.minikafka.protocol.HeartbeatReq;
 import io.minikafka.protocol.HeartbeatResp;
+import io.minikafka.protocol.JoinGroupReq;
+import io.minikafka.protocol.LeaveGroupReq;
 import io.minikafka.protocol.Message;
 import io.minikafka.protocol.MetadataReq;
 import io.minikafka.protocol.MetadataResp;
@@ -42,16 +45,19 @@ public final class BrokerRequestHandler implements RequestHandler {
   private final PartitionManager partitionManager;
   private final MetadataService metadataService;
   private final ConsumerGroupManager consumerGroupManager;
+  private final GroupCoordinator groupCoordinator;
   private final int maxPollBytes;
 
   public BrokerRequestHandler(
       MetadataService metadataService,
       PartitionManager partitionManager,
       ConsumerGroupManager consumerGroupManager,
+      GroupCoordinator groupCoordinator,
       int maxPollBytes) {
     this.metadataService = metadataService;
     this.partitionManager = partitionManager;
     this.consumerGroupManager = consumerGroupManager;
+    this.groupCoordinator = groupCoordinator;
     this.maxPollBytes = maxPollBytes;
   }
 
@@ -70,6 +76,18 @@ public final class BrokerRequestHandler implements RequestHandler {
       case HeartbeatReq req -> new HeartbeatResp(req.correlationId(), req.term());
       case AppendEntriesReq req -> handleAppendEntries(req);
       case RequestVoteReq req -> handleRequestVote(req);
+      case JoinGroupReq req ->
+          metadataService.isController()
+              ? groupCoordinator.join(req)
+              : notCoordinator(req.correlationId());
+      case GroupHeartbeatReq req ->
+          metadataService.isController()
+              ? groupCoordinator.heartbeat(req)
+              : notCoordinator(req.correlationId());
+      case LeaveGroupReq req ->
+          metadataService.isController()
+              ? groupCoordinator.leave(req)
+              : notCoordinator(req.correlationId());
       default ->
           new ErrorResp(
               request.correlationId(),
@@ -122,6 +140,13 @@ public final class BrokerRequestHandler implements RequestHandler {
     List<PollResp.Record> batch =
         records.stream().map(r -> new PollResp.Record(r.offset(), r.value())).toList();
     return new PollResp(req.correlationId(), batch);
+  }
+
+  private ErrorResp notCoordinator(long correlationId) {
+    return new ErrorResp(
+        correlationId,
+        ErrorResp.CODE_NOT_COORDINATOR,
+        "coordinator is " + metadataService.controllerId());
   }
 
   private Message handleCommitOffset(CommitOffsetReq req) {

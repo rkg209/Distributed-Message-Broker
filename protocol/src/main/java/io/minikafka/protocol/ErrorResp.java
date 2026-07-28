@@ -43,6 +43,12 @@ public record ErrorResp(long correlationId, int errorCode, String message) imple
    */
   public static final int CODE_BROKER_BUSY = 8;
 
+  /** This broker is not the static controller, so it cannot act as group coordinator. */
+  public static final int CODE_NOT_COORDINATOR = 9;
+
+  /** The coordinator has no record of the requesting {@code memberId}. */
+  public static final int CODE_UNKNOWN_MEMBER = 10;
+
   public ErrorResp {
     if (message == null) {
       throw new IllegalArgumentException("message must not be null");

@@ -147,6 +147,43 @@ public final class MessageCodec {
           out.writeLong(m.correlationId());
           out.writeLong(m.term());
         }
+        case JoinGroupReq m -> {
+          out.writeLong(m.correlationId());
+          writeString(out, m.group());
+          writeString(out, m.memberId());
+          writeString(out, m.topic());
+        }
+        case JoinGroupResp m -> {
+          out.writeLong(m.correlationId());
+          writeString(out, m.memberId());
+          out.writeInt(m.generation());
+          out.writeLong(m.heartbeatIntervalMs());
+          out.writeLong(m.sessionTimeoutMs());
+        }
+        case GroupHeartbeatReq m -> {
+          out.writeLong(m.correlationId());
+          writeString(out, m.group());
+          writeString(out, m.memberId());
+          out.writeInt(m.generation());
+        }
+        case GroupHeartbeatResp m -> {
+          out.writeLong(m.correlationId());
+          out.writeByte(m.status());
+          out.writeInt(m.generation());
+          out.writeInt(m.assignment().size());
+          for (int partition : m.assignment()) {
+            out.writeInt(partition);
+          }
+        }
+        case LeaveGroupReq m -> {
+          out.writeLong(m.correlationId());
+          writeString(out, m.group());
+          writeString(out, m.memberId());
+        }
+        case LeaveGroupResp m -> {
+          out.writeLong(m.correlationId());
+          out.writeBoolean(m.ok());
+        }
         case ErrorResp m -> {
           out.writeLong(m.correlationId());
           out.writeInt(m.errorCode());
@@ -217,6 +254,17 @@ public final class MessageCodec {
                     in.readLong(), readString(in), in.readInt(), in.readLong(), in.readBoolean());
             case HEARTBEAT_REQ -> new HeartbeatReq(in.readLong(), in.readLong(), in.readInt());
             case HEARTBEAT_RESP -> new HeartbeatResp(in.readLong(), in.readLong());
+            case JOIN_GROUP_REQ ->
+                new JoinGroupReq(in.readLong(), readString(in), readString(in), readString(in));
+            case JOIN_GROUP_RESP ->
+                new JoinGroupResp(
+                    in.readLong(), readString(in), in.readInt(), in.readLong(), in.readLong());
+            case GROUP_HEARTBEAT_REQ ->
+                new GroupHeartbeatReq(in.readLong(), readString(in), readString(in), in.readInt());
+            case GROUP_HEARTBEAT_RESP -> decodeGroupHeartbeatResp(in);
+            case LEAVE_GROUP_REQ ->
+                new LeaveGroupReq(in.readLong(), readString(in), readString(in));
+            case LEAVE_GROUP_RESP -> new LeaveGroupResp(in.readLong(), in.readBoolean());
             case ERROR_RESP -> new ErrorResp(in.readLong(), in.readInt(), readString(in));
           };
       if (in.read() != -1) {
@@ -302,6 +350,22 @@ public final class MessageCodec {
         prevLogTerm,
         entries,
         leaderCommit);
+  }
+
+  private static GroupHeartbeatResp decodeGroupHeartbeatResp(DataInputStream in)
+      throws IOException {
+    long correlationId = in.readLong();
+    byte status = in.readByte();
+    int generation = in.readInt();
+    int count = in.readInt();
+    if (count < 0) {
+      throw new ProtocolException("Negative assignment count: " + count);
+    }
+    List<Integer> assignment = new ArrayList<>(Math.min(count, 1024));
+    for (int i = 0; i < count; i++) {
+      assignment.add(in.readInt());
+    }
+    return new GroupHeartbeatResp(correlationId, status, generation, assignment);
   }
 
   private static PollResp decodePollResp(DataInputStream in) throws IOException {

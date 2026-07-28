@@ -60,7 +60,12 @@ class ConsumerGroupOffsetDurabilityTest {
     partitionManager.start();
     ConsumerGroupManager groupManager = new ConsumerGroupManager(offsetDir);
     BrokerRequestHandler handler =
-        new BrokerRequestHandler(metadataService, partitionManager, groupManager, 1024 * 1024);
+        new BrokerRequestHandler(
+            metadataService,
+            partitionManager,
+            groupManager,
+            new GroupCoordinator(metadataService, 3_000, 10_000, 5_000),
+            1024 * 1024);
     ConnectionAcceptor acceptor =
         new ConnectionAcceptor(0, ProtocolConfig.DEFAULT_MAX_FRAME_BYTES, handler);
     acceptor.start();
