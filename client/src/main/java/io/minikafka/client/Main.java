@@ -35,12 +35,17 @@ public final class Main {
     int port = Integer.parseInt(args[1]);
     String command = args[2];
 
-    try (BrokerConnection conn =
-        new BrokerConnection(host, port, ProtocolConfig.DEFAULT_MAX_FRAME_BYTES)) {
+    // A ClusterClient (not a single BrokerConnection) is required for produce/consume: in a
+    // replicated cluster (specs 06+) the broker this CLI bootstraps from is not necessarily the
+    // Raft leader for whatever partition a message routes to, so every publish/poll/commit must be
+    // able to redirect to the current leader instead of assuming the bootstrap broker always is
+    // one.
+    try (ClusterClient cluster =
+        new ClusterClient(host, port, ProtocolConfig.DEFAULT_MAX_FRAME_BYTES)) {
       switch (command) {
-        case "metadata" -> runMetadata(conn);
-        case "produce" -> runProduce(conn, args);
-        case "consume" -> runConsume(conn, args);
+        case "metadata" -> runMetadata(cluster);
+        case "produce" -> runProduce(cluster, args);
+        case "consume" -> runConsume(cluster, args);
         default -> {
           System.err.println("Unknown command: " + command);
           printUsage();
@@ -50,15 +55,14 @@ public final class Main {
     }
   }
 
-  private static void runMetadata(BrokerConnection conn) throws IOException {
-    MetadataClient metadataClient = new MetadataClient(conn);
-    List<BrokerInfo> brokers = metadataClient.fetchMetadata();
+  private static void runMetadata(ClusterClient cluster) throws IOException {
+    cluster.refresh();
     System.out.println("Brokers:");
-    for (BrokerInfo b : brokers) {
+    for (BrokerInfo b : cluster.brokers()) {
       System.out.println("  " + b.brokerId() + " @ " + b.host() + ":" + b.port());
     }
     System.out.println("Topics:");
-    for (TopicMetadata t : metadataClient.cachedTopics()) {
+    for (TopicMetadata t : cluster.topics()) {
       System.out.println("  " + t.topic() + " (" + t.partitions().size() + " partitions)");
       for (PartitionMetadata p : t.partitions()) {
         System.out.println(
@@ -72,7 +76,7 @@ public final class Main {
     }
   }
 
-  private static void runProduce(BrokerConnection conn, String[] args) throws IOException {
+  private static void runProduce(ClusterClient cluster, String[] args) throws IOException {
     if (args.length < 4) {
       System.err.println("Usage: Main <host> <port> produce <topic> [key] <message>");
       System.err.println("       Main <host> <port> produce <topic> --stdin  (one message/line)");
@@ -80,7 +84,7 @@ public final class Main {
       return;
     }
     String topic = args[3];
-    ProducerClient producer = new ProducerClient(conn);
+    ProducerClient producer = new ProducerClient(cluster);
 
     if (args.length == 5 && args[4].equals("--stdin")) {
       try (BufferedReader reader =
@@ -115,7 +119,7 @@ public final class Main {
     System.out.println("published -> partition=" + ack.partition() + " offset=" + ack.offset());
   }
 
-  private static void runConsume(BrokerConnection conn, String[] args) throws IOException {
+  private static void runConsume(ClusterClient cluster, String[] args) throws IOException {
     if (args.length < 5) {
       System.err.println(
           "Usage: Main <host> <port> consume <topic> <partition> [--group groupId]"
@@ -142,8 +146,14 @@ public final class Main {
 
     ConsumerClient consumer =
         group != null
-            ? new ConsumerClient(conn, topic, partition, group)
-            : new ConsumerClient(conn, topic, partition, fromOffsetSet ? fromOffset : 0);
+            ? new ConsumerClient(cluster, topic, partition, group)
+            : new ConsumerClient(
+                cluster,
+                topic,
+                partition,
+                fromOffsetSet ? fromOffset : 0,
+                ProducerClient.DEFAULT_MAX_RETRIES,
+                ProducerClient.DEFAULT_RETRY_BACKOFF_MS);
 
     System.out.println(
         "Consuming topic="

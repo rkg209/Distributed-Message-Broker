@@ -21,13 +21,22 @@ import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
 import org.testcontainers.containers.ComposeContainer;
+import org.testcontainers.containers.ContainerLaunchException;
 import org.testcontainers.containers.wait.strategy.Wait;
 
 /**
  * AC-5: brings up the real 3-broker Docker Compose cluster (docker/docker-compose.yml), waits for
- * every broker's "joined cluster" log line, verifies the rotating leader assignment over the real
- * wire protocol, then stops broker-2 and asserts its peers log SUSPECTED. Requires Docker; run via
- * {@code ./gradlew :broker:integrationTest}, never as part of {@code ./gradlew test}.
+ * every broker's "joined cluster" log line, verifies each partition has a leader from its replica
+ * set over the real wire protocol, then stops broker-2 and asserts its peers log SUSPECTED.
+ * Requires Docker; run via {@code ./gradlew :broker:integrationTest}, never as part of {@code
+ * ./gradlew test}.
+ *
+ * <p>{@code environment.start()} spins up a Testcontainers "ambassador" container per exposed
+ * service that links to the target container by name immediately after Compose reports it started;
+ * that link attempt races the target container's own startup and can intermittently fail with
+ * "Aborting attempt to link to container ... as it is not running" even though the container comes
+ * up fine a moment later. {@link #START_ATTEMPTS} absorbs that narrow race by retrying the whole
+ * Compose bring-up rather than failing the suite on a transient timing issue.
  */
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class ClusterFormationIT {
@@ -35,25 +44,41 @@ class ClusterFormationIT {
   private static ComposeContainer environment;
 
   private static final Duration STARTUP_TIMEOUT = Duration.ofMinutes(5);
+  private static final int START_ATTEMPTS = 3;
+  private static final int BROKER_1_HOST_PORT = 9092;
 
   @BeforeAll
   static void startCluster() {
-    environment =
-        new ComposeContainer(new File("../docker/docker-compose.yml"))
-            .withExposedService(
-                "broker-1",
-                9092,
-                Wait.forLogMessage(".*joined cluster.*\\n", 1).withStartupTimeout(STARTUP_TIMEOUT))
-            .withExposedService(
-                "broker-2",
-                9092,
-                Wait.forLogMessage(".*joined cluster.*\\n", 1).withStartupTimeout(STARTUP_TIMEOUT))
-            .withExposedService(
-                "broker-3",
-                9092,
-                Wait.forLogMessage(".*joined cluster.*\\n", 1).withStartupTimeout(STARTUP_TIMEOUT))
-            .withStartupTimeout(STARTUP_TIMEOUT);
-    environment.start();
+    ContainerLaunchException lastFailure = null;
+    for (int attempt = 1; attempt <= START_ATTEMPTS; attempt++) {
+      environment =
+          new ComposeContainer(new File("../docker/docker-compose.yml"))
+              .withExposedService(
+                  "broker-1",
+                  9092,
+                  Wait.forLogMessage(".*joined cluster.*\\n", 1)
+                      .withStartupTimeout(STARTUP_TIMEOUT))
+              .withExposedService(
+                  "broker-2",
+                  9092,
+                  Wait.forLogMessage(".*joined cluster.*\\n", 1)
+                      .withStartupTimeout(STARTUP_TIMEOUT))
+              .withExposedService(
+                  "broker-3",
+                  9092,
+                  Wait.forLogMessage(".*joined cluster.*\\n", 1)
+                      .withStartupTimeout(STARTUP_TIMEOUT))
+              .withStartupTimeout(STARTUP_TIMEOUT);
+      try {
+        environment.start();
+        return;
+      } catch (ContainerLaunchException e) {
+        lastFailure = e;
+        environment.stop();
+      }
+    }
+    throw new IllegalStateException(
+        "Compose cluster failed to start after " + START_ATTEMPTS + " attempts", lastFailure);
   }
 
   @AfterAll
@@ -65,12 +90,10 @@ class ClusterFormationIT {
 
   @Test
   @Order(1)
-  void allThreeBrokersJoinAndReportRotatingLeaders() throws Exception {
-    String host = environment.getServiceHost("broker-1", 9092);
-    int port = environment.getServicePort("broker-1", 9092);
-
+  void allThreeBrokersJoinAndEveryPartitionHasAnElectedLeader() throws Exception {
     try (BrokerConnection conn =
-        new BrokerConnection(host, port, ProtocolConfig.DEFAULT_MAX_FRAME_BYTES)) {
+        new BrokerConnection(
+            "localhost", BROKER_1_HOST_PORT, ProtocolConfig.DEFAULT_MAX_FRAME_BYTES)) {
       MetadataClient metadataClient = new MetadataClient(conn);
       List<BrokerInfo> brokers = metadataClient.fetchMetadata();
       assertEquals(3, brokers.size());
@@ -83,9 +106,22 @@ class ClusterFormationIT {
       Map<Integer, PartitionMetadata> byPartition =
           orders.partitions().stream()
               .collect(Collectors.toMap(PartitionMetadata::partitionId, p -> p));
-      assertEquals(1, byPartition.get(0).leaderId());
-      assertEquals(2, byPartition.get(1).leaderId());
-      assertEquals(3, byPartition.get(2).leaderId());
+      // Leadership is Raft-elected (Spec 06+), not fixed by the static PARTITION_ASSIGNMENTS
+      // ordering in docker-compose.yml — asserting a specific rotation (e.g. leader 1/2/3 for
+      // partitions 0/1/2) is asserting an implementation detail of election timing, not a real
+      // guarantee. What's actually guaranteed: every partition has a leader, and that leader is
+      // one of its own replicas.
+      for (int partition = 0; partition < 3; partition++) {
+        PartitionMetadata metadata = byPartition.get(partition);
+        assertTrue(
+            metadata.replicaIds().contains(metadata.leaderId()),
+            "partition "
+                + partition
+                + " leader "
+                + metadata.leaderId()
+                + " is not one of its replicas "
+                + metadata.replicaIds());
+      }
     }
   }
 

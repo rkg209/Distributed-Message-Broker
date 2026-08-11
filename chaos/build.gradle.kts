@@ -37,6 +37,12 @@ tasks.register<JavaExec>("demo") {
     systemProperty("demo.killAtMessages", providers.gradleProperty("killAt").getOrElse(""))
     systemProperty("demo.bootstrap", providers.gradleProperty("bootstrap").getOrElse("localhost:9092"))
     systemProperty("demo.composeDir", rootProject.file("docker").path)
+    // Previously not wired at all, so a real (slow, Docker-backed, RF=3, fsync-on-commit) run had
+    // no way to give the post-load drain window more time than DemoConfig's in-process-test-sized
+    // default — which produced a false-positive LossChecker failure on a real 20k-message run
+    // (the tail records were still in flight, not actually lost; see docs/results.md).
+    systemProperty("demo.settleMs", providers.gradleProperty("settleMs").getOrElse(""))
+    systemProperty("demo.runTimeoutMs", providers.gradleProperty("runTimeoutMs").getOrElse(""))
 }
 
 val chaosTest = tasks.register<Test>("chaosTest") {

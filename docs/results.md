@@ -71,14 +71,28 @@ as part of `./gradlew test`.
 
 | Run | Date | Messages | Kill point | Service killed | Result |
 |-----|------|----------|------------|-----------------|--------|
-| — | — | — | — | — | not yet run |
+| 1 | 2026-08-11 | 20,000 acked / 20,000 received | 2,001 acked | broker-2 (SIGKILL) | PASS |
 
-`scripts/demo.sh` / `:chaos:demo` are new in Spec 14 and have been verified by unit
-test (`DemoConfigTest`, `OffsetContiguityCheckTest`) and `bash -n` syntax check only —
-this development environment has no Docker daemon, so the end-to-end run against a
-live Compose cluster has not yet been executed here. Run `./scripts/demo.sh` locally
-(Docker required) and replace this row with the observed date, message count, kill
-point, and PASS/FAIL.
+Run end-to-end against a live 3-broker Compose cluster for the first time on 2026-08-11.
+The first attempt actually surfaced two real bugs, both fixed before this row was recorded:
+
+1. **False-positive `LossChecker` failure** (139 "lost" records, all in a contiguous tail
+   range per partition, well after the kill point): `DemoRunner`'s post-load drain window
+   only waited for a single 3-second quiet period before stopping consumers, and
+   `demo.settleMs`/`demo.runTimeoutMs` were defined in `DemoConfig` but never actually wired
+   to the `:chaos:demo` Gradle task, so a real Docker-backed, RF=3, fsync-on-commit run at
+   this scale (10+ minutes wall clock) had no way to get a longer drain window than an
+   in-process test needs. Fixed by wiring both properties through and requiring two
+   consecutive quiet windows (raised default `settleMs` 3s → 10s) before concluding the
+   consumers have actually drained — see `DemoRunner.run()` and `chaos/build.gradle.kts`.
+2. **`scripts/demo.sh` printed `DEMO PASSED` even when the run failed**: `if ! cmd; then
+   RUNNER_EXIT=$?; fi` captured the *negated* condition's exit status (always 0 on entering
+   the `then` branch), not `cmd`'s real exit code, so the script's own claimed "exits with
+   the verdict's own exit code" guarantee (spec 14) didn't hold. Fixed by using
+   `cmd || RUNNER_EXIT=$?` instead.
+
+After both fixes, a clean re-run produced 0 loss / 0 duplication / 0 offset gaps across all
+20,000 messages with 1 real container kill mid-publish.
 
 ---
 

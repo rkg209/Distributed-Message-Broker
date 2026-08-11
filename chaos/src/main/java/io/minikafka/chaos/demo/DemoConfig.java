@@ -33,7 +33,13 @@ public record DemoConfig(
   private static final String DEFAULT_COMPOSE_FILE = "docker-compose.yml";
   private static final String DEFAULT_COMPOSE_DIR = "../docker";
   private static final boolean DEFAULT_RESTART_AFTER = true;
-  private static final long DEFAULT_SETTLE_MS = 3_000;
+  // 3s (one sampling window) was tuned against small/fast runs and produced a false-positive
+  // LossChecker failure on a real 20k-message, RF=3, fsync-on-commit Docker run: the drain loop
+  // saw one quiet window and stopped consumers while genuinely-committed tail records were still
+  // in flight. 10s per window, combined with DemoRunner requiring two consecutive quiet windows
+  // before concluding drained, gives real runs enough headroom without the check ever needing to
+  // just wait for the full deadline on a genuinely stuck run.
+  private static final long DEFAULT_SETTLE_MS = 10_000;
   private static final long DEFAULT_RUN_TIMEOUT_MS = 600_000;
 
   public DemoConfig {

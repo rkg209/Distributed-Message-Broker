@@ -24,7 +24,7 @@ class DemoConfigTest {
     assertEquals("docker-compose.yml", config.composeFile());
     assertEquals("../docker", config.composeDir());
     assertEquals(true, config.restartAfter());
-    assertEquals(3_000, config.settleMs());
+    assertEquals(10_000, config.settleMs());
     assertEquals(600_000, config.runTimeoutMs());
   }
 

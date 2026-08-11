@@ -107,12 +107,13 @@ fi
 
 echo ">>> running the demo ($MESSAGES messages, broker-2 killed mid-publish)"
 RUNNER_EXIT=0
-if ! (cd "$ROOT_DIR" && ./gradlew "${GRADLE_ARGS[@]}"); then
-  RUNNER_EXIT=$?
-  if [[ -z "${JAVA_HOME:-}" ]]; then
-    echo "hint: if Gradle failed to find a JDK 21 toolchain, set JAVA_HOME to a JDK 21" \
-      "install (this machine's system JDK alone is not enough)." >&2
-  fi
+# Must use `||`, not `if ! cmd; then RUNNER_EXIT=$?; fi` — with the latter, `$?` inside the
+# then-block reflects the negated `!` condition (always 0), not cmd's real exit status, so a
+# genuine failure would still be captured as RUNNER_EXIT=0 and misreported as DEMO PASSED.
+(cd "$ROOT_DIR" && ./gradlew "${GRADLE_ARGS[@]}") || RUNNER_EXIT=$?
+if [[ "$RUNNER_EXIT" -ne 0 && -z "${JAVA_HOME:-}" ]]; then
+  echo "hint: if Gradle failed to find a JDK 21 toolchain, set JAVA_HOME to a JDK 21" \
+    "install (this machine's system JDK alone is not enough)." >&2
 fi
 
 if [[ "$RUNNER_EXIT" -eq 0 ]]; then

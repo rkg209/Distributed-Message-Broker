@@ -106,15 +106,20 @@ public final class DemoRunner {
       producersLatch.await(config.runTimeoutMs(), TimeUnit.MILLISECONDS);
       producersDone.set(true);
 
-      // Let consumers drain to end-of-log: wait until no partition yields new records for a
-      // full settle window.
-      long deadline = System.nanoTime() + Duration.ofMillis(config.settleMs() * 3).toNanos();
+      // Let consumers drain to end-of-log: wait until no partition yields new records across two
+      // consecutive full settle windows (one quiet window alone is not enough evidence of having
+      // actually drained — a real Docker-backed run can have a lull inside a single window, e.g.
+      // from redirect backoff after the kill, while genuinely-committed records still remain).
+      long deadline = System.nanoTime() + Duration.ofMillis(config.settleMs() * 6).toNanos();
       long lastReceived = -1;
-      while (System.nanoTime() < deadline) {
+      int consecutiveQuietWindows = 0;
+      while (System.nanoTime() < deadline && consecutiveQuietWindows < 2) {
         Thread.sleep(config.settleMs());
         long now = received.get();
         if (now == lastReceived) {
-          break;
+          consecutiveQuietWindows++;
+        } else {
+          consecutiveQuietWindows = 0;
         }
         lastReceived = now;
       }

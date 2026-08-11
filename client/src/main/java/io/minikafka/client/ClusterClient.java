@@ -129,6 +129,16 @@ public final class ClusterClient implements AutoCloseable {
     return partitionMetadata(topic, partition).leaderId();
   }
 
+  /** Every broker known from the last metadata fetch/refresh. */
+  public List<BrokerInfo> brokers() {
+    return brokers;
+  }
+
+  /** Every topic known from the last metadata fetch/refresh. */
+  public List<TopicMetadata> topics() {
+    return topics;
+  }
+
   /**
    * Every broker id known from the last metadata fetch/refresh — used by {@link CoordinatorCall} to
    * pick an initial broker to try before it learns the actual group coordinator (the static
