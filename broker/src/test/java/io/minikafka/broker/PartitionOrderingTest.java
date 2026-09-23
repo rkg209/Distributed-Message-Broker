@@ -30,7 +30,10 @@ import org.junit.jupiter.api.io.TempDir;
 class PartitionOrderingTest {
 
   private static final String TOPIC = "orders";
-  private static final int RECORD_COUNT = 2_000;
+  // Each publish pays two serialized fsyncs (Raft log + applied-index marker) even with an
+  // in-memory partition log; 2_000 per partition took ~29-35s on a ~231 fsync/s laptop disk,
+  // straddling the 30s budget. 500 still interleaves the two producers heavily.
+  private static final int RECORD_COUNT = 500;
 
   private ConnectionAcceptor acceptor;
   private PartitionManager partitionManager;

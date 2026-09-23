@@ -60,6 +60,14 @@ final class ElectionTimer {
     deadlineNanos = clockNanos.getAsLong() + timeoutMs * 1_000_000L;
   }
 
+  /**
+   * Whether the current deadline has passed. {@code onTimeout} re-checks this under the node lock:
+   * the timer thread may have observed expiry while blocked behind a handler that then reset it.
+   */
+  boolean isExpired() {
+    return clockNanos.getAsLong() >= deadlineNanos;
+  }
+
   /** Disables timeout firing (called on becoming leader). */
   void suppress() {
     suppressed = true;

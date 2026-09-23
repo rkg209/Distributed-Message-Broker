@@ -227,6 +227,7 @@ public final class RaftNode implements AutoCloseable {
         role = RaftRole.FOLLOWER;
       }
       leaderId = req.leaderId();
+      // Re-arms the rejection paths below; the success path re-arms again after its disk work.
       electionTimer.reset();
 
       if (req.prevLogIndex() > 0) {
@@ -267,6 +268,9 @@ public final class RaftNode implements AutoCloseable {
         commitIndex = Math.min(req.leaderCommit(), lastNewIndex);
         applyCommitted();
       }
+      // Re-arm after the durable append/apply work above: on a slow disk it can outlast the
+      // election timeout, and the leader was demonstrably alive when this request arrived.
+      electionTimer.reset();
       return new AppendEntriesResponse(
           persistentState.currentTerm(), true, 0, 0, logStore.lastIndex());
     } finally {
@@ -326,7 +330,9 @@ public final class RaftNode implements AutoCloseable {
     List<Integer> targets;
     lock.lock();
     try {
-      if (role == RaftRole.LEADER) {
+      // The timer saw the deadline pass before taking the lock; a handler holding the lock in the
+      // meantime (e.g. a slow durable append from a live leader) may have reset it since.
+      if (role == RaftRole.LEADER || !electionTimer.isExpired()) {
         return;
       }
       electionTerm = persistentState.currentTerm() + 1;

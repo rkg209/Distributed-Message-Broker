@@ -19,6 +19,11 @@
 
 ## Action 1 — Fix the failing and flaky tests so `./gradlew test` is deterministically green
 
+> **Status: DONE (2026-09-23).** Two consecutive full `./gradlew test --rerun-tasks` runs: 337 tests, 0 failures, 0 errors (~450 s each).
+> - `PartitionOrderingTest`: re-measured at 28.6 s against its 30 s budget (disk-bound, as predicted). `RECORD_COUNT` 2,000 → 500; now ~7.5 s.
+> - `FollowerKillTest` / `ConsumerResumeAfterFailoverTest`: passed 18/18 in isolation, so not a timeout problem. Root cause was a **Raft liveness bug**: a follower reset its election timer *before* its durable append/apply; when that disk work outlasted the 150–300 ms election timeout, the timer thread (already past the deadline, blocked on the node lock) started an election unconditionally once the lock freed — spurious term bumps / leader churn under disk load, surfacing as NOT_LEADER to the tests' single-connection producers. Fixed in `RaftNode` (re-arm after disk work; `startElection` re-checks expiry under the lock) with regression test `SlowFollowerElectionTest` (reproduced term 1→2 deterministically before the fix). `/raft-review`: all five invariants PASS, no changes required. This also likely caused needless elections in the Docker cluster under load — relevant to M6/M7 in Action 4.
+> - Not changed: `ConnectionAcceptor.close()` uses `shutdownNow()`, which interrupts handler threads that may be mid-`FileChannel` I/O (closing the channel via `ClosedByInterruptException`). This is a plausible cause of the one-off teardown `ClosedChannelException` the audit saw, but it was not reproduced; left as-is pending evidence.
+
 ### Action
 Make `PartitionOrderingTest.concurrentProducersOnDifferentPartitionsPreserveEachOthersOrder` pass deterministically, and stabilise `FollowerKillTest.publishingContinuesAfterAFollowerIsKilled` and `ConsumerResumeAfterFailoverTest.consumerResumesFromCommittedOffsetAfterFailover`.
 
